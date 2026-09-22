@@ -1,0 +1,19 @@
+# 開発者固有の秘密情報と再配布しないVRMをGitへ混入させないための除外設定です。
+.env
+*.swp
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+local-assets/vrm/*.vrm
+local-assets/motions/*.vrma
+local-assets/backgrounds/*
+!local-assets/backgrounds/.gitkeep
+local-assets/whisper/
+runtime/audio/*.wav
+runtime/images/*

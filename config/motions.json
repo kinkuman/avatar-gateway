@@ -1,0 +1,230 @@
+{
+  "_comment": "Hermesの構造化制御、VRMAファイル、画面表示を一元管理するモーションカタログです。",
+  "schema_version": 1,
+  "generating_motion": "hands_behind_back",
+  "motions": [
+    {
+      "name": "nod",
+      "label": "うなずく",
+      "file": "nod.vrma",
+      "prompt": "同意、了解、承諾、肯定、短い確認への返答",
+      "enabled": true
+    },
+    {
+      "name": "lean_forward",
+      "label": "前屈み",
+      "file": "前屈み姿勢.vrma",
+      "prompt": "興味を持って身を乗り出す、注意深く聞く返答",
+      "exit_duration_seconds": 1.2,
+      "enabled": true
+    },
+    {
+      "name": "hands_behind_back",
+      "label": "手を後ろで組む",
+      "file": "手を後ろで組むポーズ.vrma",
+      "prompt": "穏やかに考える、落ち着いて待つ返答",
+      "exit_duration_seconds": 1.5,
+      "enabled": true
+    },
+    {
+      "name": "energetic_raise",
+      "label": "元気に片腕を上げる",
+      "file": "片腕を挙げた元気なポーズ.vrma",
+      "prompt": "喜び、祝福、元気な挨拶、積極的な返答、明るい成功報告",
+      "exit_duration_seconds": 1.5,
+      "enabled": true
+    },
+    {
+      "name": "put_your_hands_up",
+      "label": "両手を上げる",
+      "file": "put_your_hands_up.vrma",
+      "prompt": "参った、降参、抵抗しません、明るいお手上げ",
+      "exit_duration_seconds": 1.5,
+      "enabled": true
+    },
+    {
+      "name": "bow",
+      "label": "軽くお辞儀する",
+      "file": "bow.vrma",
+      "prompt": "丁寧な挨拶、お礼、軽い謝意を表す返答",
+      "enabled": true
+    },
+    {
+      "name": "deep_bow",
+      "label": "深くお辞儀する",
+      "file": "deep_bow.vrma",
+      "prompt": "深い感謝、真剣な謝罪、強い敬意を表す返答",
+      "exit_duration_seconds": 1.5,
+      "enabled": true
+    },
+    {
+      "name": "lightly_spread_arms",
+      "label": "両腕を軽く広げる",
+      "file": "lightly_spread_arms.vrma",
+      "prompt": "おいで、受け入れ、受け止める姿勢、歓迎の姿勢",
+      "exit_duration_seconds": 1.5,
+      "enabled": true
+    },
+    {
+      "name": "sexy_pose",
+      "label": "セクシーポーズ",
+      "file": "セクシーポーズ.vrma",
+      "prompt": "自信のある振る舞い、セクシーに見せる決めポーズ",
+      "exit_duration_seconds": 1.5,
+      "enabled": true
+    },
+    {
+      "name": "cute_standing",
+      "label": "可愛い立ち姿勢",
+      "file": "可愛い立ち姿勢.vrma",
+      "prompt": "自分を可愛く見せる、控えめな可愛い立ち姿勢",
+      "exit_duration_seconds": 1.5,
+      "enabled": true
+    },
+    {
+      "name": "cute_confident",
+      "label": "可愛い自信ポーズ",
+      "file": "可愛い自信ポーズ.vrma",
+      "prompt": "自分を可愛く見せる、可愛い自信のある立ち姿勢",
+      "exit_duration_seconds": 2.0,
+      "enabled": true
+    },
+    {
+      "name": "small_open_arms",
+      "label": "小さく手を広げる",
+      "file": "小さく手を広げたポーズ.vrma",
+      "prompt": "女の子っぽい立ち姿勢、かわいい待機姿勢",
+      "enabled": true
+    },
+    {
+      "name": "extend_hands",
+      "label": "手を伸ばす",
+      "file": "手を伸ばすポーズ.vrma",
+      "prompt": "強めな、おいで、受け入れ、受け止める姿勢、歓迎の姿勢",
+      "enabled": true
+    },
+    {
+      "name": "salute",
+      "label": "敬礼する",
+      "file": "敬礼.vrma",
+      "prompt": "了解、任務の受諾、元気で礼儀正しい返答",
+      "enabled": true
+    },
+    {
+      "name": "gentle_open_arms",
+      "label": "軽く手を広げる",
+      "file": "軽く手を広げたポーズ.vrma",
+      "prompt": "かわいい待機姿勢",
+      "enabled": true
+    },
+    {
+      "name": "please",
+      "label": "おねがい",
+      "file": "おねがい.vrma",
+      "prompt": "お願い、懇願、頼む、助けて、許して、許可を求める返答",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    },
+    {
+      "name": "wave",
+      "label": "手を振る",
+      "file": "right_hand_wave.vrma",
+      "prompt": "挨拶、手を振る、バイバイ、元気な返答",
+      "playback": "auto",
+      "exit_duration_seconds": 2.0,
+      "enabled": true
+    },
+    {
+      "name": "crossed_arms",
+      "label": "腕組み",
+      "file": "腕組み.vrma",
+      "prompt": "考え込む、悩む、落ち着いて待つ返答",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    },
+    {
+      "name": "angry_pose",
+      "label": "怒るポーズ",
+      "file": "怒るポーズ.vrma",
+      "prompt": "怒る、不機嫌を表す返答",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    },
+    {
+      "name": "nervous_pose",
+      "label": "頬に手を当てるポーズ",
+      "file": "頬に手を当てるポーズ.vrma",
+      "prompt": "頬に手を当てる",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    },
+    {
+      "name": "hopping_vampire_pose",
+      "label": "東洋吸血鬼のポーズ",
+      "file": "東洋吸血鬼のポーズ.vrma",
+      "prompt": "東洋吸血鬼のポーズ",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    },
+    {
+      "name": "strange_pose",
+      "label": "奇妙なポーズ",
+      "file": "奇妙なポーズ.vrma",
+      "prompt": "かっこよく考えるポーズ、決めポーズ",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    },
+    {
+      "name": "zua_pose",
+      "label": "ズァッのポーズ",
+      "file": "ズァッのポーズ.vrma",
+      "prompt": "疑問やためらい、軽い否定を示す、挑戦的なポーズ、決めポーズ",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    },
+    {
+      "name": "bat_pose",
+      "label": "バツのポーズ",
+      "file": "バツのポーズ.vrma",
+      "prompt": "バツのポーズ、ダメ、失敗",
+      "playback": "pose",
+      "exit_duration_seconds": 2.0,
+      "enabled": true
+    },
+    {
+      "name": "maru_pose",
+      "label": "マルのポーズ",
+      "file": "マルのポーズ.vrma",
+      "prompt": "マルのポーズ、OK、成功",
+      "playback": "pose",
+      "exit_duration_seconds": 2.0,
+      "enabled": true
+    },
+    {
+      "name": "thinking_pose",
+      "label": "考えるポーズ",
+      "file": "考えるポーズ.vrma",
+      "prompt": "深く考える、思案する、熟考する",
+      "playback": "pose",
+      "exit_duration_seconds": 1.4,
+      "enabled": true
+    },
+    {
+      "name": "inspiration_pose",
+      "label": "道を示すポーズ",
+      "file": "道を示すポーズ.vrma",
+      "prompt": "何かを思いついた時、よい案を提案する時、説明中に重要なポイントを示す時に使う。",
+      "playback": "pose",
+      "exit_duration_seconds": 1.0,
+      "enabled": true
+    }
+
+  ]
+}

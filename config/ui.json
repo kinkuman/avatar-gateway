@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "cast_off_enabled": false,
+  "show_motion_controls": false,
+  "show_camera_help": true,
+  "speech_volume": 1.0,
+  "camera": null,
+  "background": {
+    "file": null,
+    "fit": "cover"
+  },
+  "touch_interaction": {
+    "extended_regions_enabled": false,
+    "enabled": true,
+    "debug_hitboxes": false,
+    "regions": {
+      "head": true,
+      "chest": true,
+      "hips": true,
+      "groin": true,
+      "thigh": true,
+      "hand": true,
+      "foot": true
+    }
+  },
+  "voice_input": {
+    "silence_ms": 800,
+    "speech_threshold": 0.02
+  }
+}
