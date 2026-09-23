@@ -25,28 +25,11 @@ Avatar Gatewayは、HermesAgentの返答をVRMアバターの表情・口パク�
 - カメラ操作、壁紙変更、アバターとのふれあい
 - 音声機能を使わないテキストだけの会話
 
-## 会話で使う日時と時間帯
-
-![時間について](docs/images/datetime.png)
-
-会話を送るたびに、Avatar Gatewayのバックエンドが現在日時と時間帯をHermesAgentへ渡します。テキスト・音声・ふれあいからの会話で共通して働きます。時刻をきっかけに自発的に話しかける機能ではありません。
-
-初期設定は日本時間（`Asia/Tokyo`）です。サーバーOSがUTCでも日本時間を使います。別の地域で利用する場合は、プロジェクト直下の`.env`へ、例えば`AVATAR_GATEWAY_TIMEZONE=Europe/London`と記載し、バックエンドを再起動してください。設定を省略すると日本時間になります。存在しないタイムゾーン名では起動できないため、綴りを確認してください。現在時刻の元になるサーバーの時計も正しく合わせてください。
-
-| 時間帯 | 現地時刻 |
-| --- | --- |
-| `morning` | 05:00〜11:59 |
-| `daytime` | 12:00〜17:59 |
-| `evening` | 18:00〜22:59 |
-| `night` | 23:00〜04:59 |
-
-同じセッションでは前回の会話日時も伝えるため、時間の経過を踏まえた返答ができます。新しいセッションは初回の会話として扱います。設定を元に戻すには、`.env`の`AVATAR_GATEWAY_TIMEZONE`を削除するか`Asia/Tokyo`に戻して、バックエンドを再起動してください。
-
 ## 必要なもの
 
 - Python 3.11以降
 - Node.js 20以降
-- HermesAgent API Server
+- HermesAgent API Server (Hermes Agentに同梱)
 - Style-Bert-VITS2（音声を使う場合）
 - faster-whisper（音声入力を使う場合。バックエンド依存関係から導入されます）
 - 利用権限のあるVRMファイル（同梱サンプルから差し替える場合）
@@ -85,6 +68,23 @@ Hermesの`image_generate`を使う場合は、生成画像キャッシュの場�
 
 生成画像を表示するには、Avatar GatewayバックエンドからHermesの画像キャッシュをローカルファイルとして参照できる必要があります。HermesとAvatar Gatewayを別のサーバーで動かす場合は、Hermesの`cache/images`を共有ストレージなどでAvatar Gateway側へマウントし、そのパスを`HERMES_IMAGE_CACHE_DIR`に指定してください。画像キャッシュを共有できない構成では、会話は利用できますが生成画像は表示されません。
 
+### 会話で使う日時と時間帯
+
+![時間について](docs/images/datetime.png)
+
+会話を送るたびに、Avatar Gatewayのバックエンドが現在日時と時間帯をHermesAgentへ渡します。テキスト・音声・ふれあいからの会話で共通して働きます。時刻をきっかけに自発的に話しかける機能ではありません。
+
+初期設定は日本時間（`Asia/Tokyo`）です。サーバーOSがUTCでも日本時間を使います。別の地域で利用する場合は、プロジェクト直下の`.env`へ、例えば`AVATAR_GATEWAY_TIMEZONE=Europe/London`と記載し、バックエンドを再起動してください。設定を省略すると日本時間になります。存在しないタイムゾーン名では起動できないため、綴りを確認してください。現在時刻の元になるサーバーの時計も正しく合わせてください。
+
+| 時間帯 | 現地時刻 |
+| --- | --- |
+| `morning` | 05:00〜11:59 |
+| `daytime` | 12:00〜17:59 |
+| `evening` | 18:00〜22:59 |
+| `night` | 23:00〜04:59 |
+
+同じセッションでは前回の会話日時も伝えるため、時間の経過を踏まえた返答ができます。新しいセッションは初回の会話として扱います。設定を元に戻すには、`.env`の`AVATAR_GATEWAY_TIMEZONE`を削除するか`Asia/Tokyo`に戻して、バックエンドを再起動してください。
+
 ### 音声合成（任意）
 
 ![音声合成](docs/images/tts.png)
@@ -108,6 +108,7 @@ STYLEBERTVITS2_CHUNK_MAX_CHARS=100
 ```env
 STYLEBERTVITS2_ENABLED=false
 ```
+但し、音声合成がない場合、`このアプリの良さが半減してしまう`ため、導入をおすすめします。
 
 ### 音声認識（任意）
 
@@ -126,7 +127,7 @@ FASTER_WHISPER_BEAM_SIZE=3
 FASTER_WHISPER_LOCAL_FILES_ONLY=true
 ```
 
-音声入力を有効にしても、通常起動中にモデルを自動取得しません。依存関係をインストールした後、後述の明示コマンドで`small`モデルを`local-assets/whisper/`へ取得してください。モデルがない場合はマイクだけを無効化し、テキスト会話と読み上げは継続します。認識速度や精度を比較する場合は、導入前に`FASTER_WHISPER_MODEL`で別のモデルを明示できます。
+音声入力を有効にしても、通常起動中にモデルを自動取得しません。依存関係をインストールした後、後述(4.バックエンドの起動)の明示コマンドで`small`モデルを`local-assets/whisper/`へ取得してください。モデルがない場合はマイクだけを無効化し、テキスト会話と読み上げは継続します。認識速度や精度を比較する場合は、導入前に`FASTER_WHISPER_MODEL`で別のモデルを明示できます。
 
 音声入力を使わない環境では`FASTER_WHISPER_ENABLED=false`にします。この場合もテキスト入力と読み上げは従来どおり利用できます。
 
@@ -661,6 +662,28 @@ cd backend
 - HermesのAPI Serverが`127.0.0.1:8642`で起動しているか確認します。
 - `.env`の`HERMES_API_KEY`がHermesの`API_SERVER_KEY`と一致しているか確認します。
 - `HERMES_BASE_URL`には末尾の`/v1`まで含めます。
+
+HermesとAvatar Gatewayを別の端末で動かしている場合は、Hermesがローカル以外からの接続を受け付ける必要があります。Hermesが使用している`.env`を確認し、次のように設定してからHermes Gatewayを再起動します。
+
+```env
+API_SERVER_HOST=0.0.0.0
+```
+
+`0.0.0.0`はすべてのネットワークインターフェースで待ち受ける設定です。信頼できるLAN内だけで使用し、`API_SERVER_KEY`とファイアウォールを適切に設定してください。
+
+次に、Avatar Gatewayを動かしている端末からHermesのヘルスチェックへ接続します。次のIPアドレスは例なので、Hermesを動かしている端末のIPアドレスへ置き換えてください。
+
+```bash
+curl -v http://192.168.2.168:8642/health
+```
+
+HTTP 200と`"status": "ok"`が返れば、Avatar Gateway側からHermesへ到達できます。接続拒否やタイムアウトになる場合は、Hermes Gatewayの再起動、IPアドレス、ポート番号、ファイアウォールを確認してください。この確認はネットワーク到達性を調べるもので、Hermesの`.env`の内容そのものを表示するものではありません。
+
+別端末のHermesへ接続するときは、Avatar Gatewayの`.env`も同じIPアドレスを参照させます。
+
+```env
+HERMES_BASE_URL=http://192.168.2.168:8642/v1
+```
 
 ### 機能一覧で`Skill一覧APIエラー: 502`と表示される
 

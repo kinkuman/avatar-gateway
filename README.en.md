@@ -533,6 +533,28 @@ To return to the default Profile, restore the values shown in [Initial Configura
 - Confirm that `HERMES_API_KEY` in `.env` matches the Hermes `API_SERVER_KEY`.
 - Include the final `/v1` in `HERMES_BASE_URL`.
 
+When Hermes and Avatar Gateway run on different machines, Hermes must accept connections from outside localhost. In the `.env` used by Hermes, set the following value and then restart Hermes Gateway:
+
+```env
+API_SERVER_HOST=0.0.0.0
+```
+
+`0.0.0.0` listens on every network interface. Use this setting only on a trusted LAN, and protect the service with `API_SERVER_KEY` and appropriate firewall rules.
+
+From the machine running Avatar Gateway, connect to the Hermes health endpoint. The following IP address is an example; replace it with the address of the machine running Hermes:
+
+```bash
+curl -v http://192.168.2.168:8642/health
+```
+
+An HTTP 200 response containing `"status": "ok"` confirms that Hermes is reachable from the Avatar Gateway machine. If the connection is refused or times out, check that Hermes Gateway was restarted and verify the IP address, port, and firewall. This request verifies network reachability; it does not display the contents of the Hermes `.env` file.
+
+Point the Avatar Gateway `.env` at the same address:
+
+```env
+HERMES_BASE_URL=http://192.168.2.168:8642/v1
+```
+
 ### `Skill一覧APIエラー: 502` in the Resources Screen
 
 Some current Hermes revisions return an internal error for `GET /v1/skills`. The Avatar Gateway resources screen cannot load in this case, but normal conversations and task execution still work. Changing Avatar Gateway connection settings does not fix this Hermes-side problem.
