@@ -128,7 +128,7 @@ Avatar Gateway never downloads a Whisper model during normal startup. After inst
 
 ## 2. Change the VRM (Optional)
 
-Avatar Gateway is already configured to use the included Hamuko VRM. You can skip this section if you want to use Hamuko as provided.
+Avatar Gateway is already configured to use the included sample VRM named Hamuko. You can skip this section if you want to use the bundled model as provided. “Hamuko” identifies the bundled model; no specific persona or character setting is included. You may assign your own name and persona when using it.
 
 The included VRM file is located at:
 
@@ -136,7 +136,7 @@ The included VRM file is located at:
 assets/vrm/はむ子.vrm
 ```
 
-See the [Hamuko model terms of use](docs/character_model_license.md) before using it. These terms are currently available in Japanese.
+See the [Hamuko VRM model terms of use](docs/character_model_license.md) before using it. These terms are currently available in Japanese.
 
 To use another VRM, copy the VRM file into:
 
@@ -594,7 +594,7 @@ Each project remains subject to its own license. See the [Third-Party Software N
 
 - Avatar Gateway source code: [MIT License](LICENSE)
 - Bundled VRMA files and background images: [CC0 1.0](ASSET_LICENSES.en.md)
-- `はむ子.vrm`: [model-specific terms of use](docs/character_model_license.md), currently available in Japanese
+- `はむ子.vrm`: [VRM model-specific terms of use](docs/character_model_license.md), currently available in Japanese
 
 Models, motions, and images added under `local-assets/` remain subject to the terms set by their respective creators.
 

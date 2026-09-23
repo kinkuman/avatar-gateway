@@ -2,7 +2,7 @@
 
 [English](ASSET_LICENSES.en.md)
 
-Avatar Gateway本体のMIT Licenseとは別に、同梱する画像・モーション・キャラクターモデルには次の条件を適用します。
+Avatar Gateway本体のMIT Licenseとは別に、同梱する画像・モーション・VRMモデルには次の条件を適用します。
 
 ## 背景画像とVRMA
 
@@ -11,9 +11,9 @@ Avatar Gateway本体のMIT Licenseとは別に、同梱する画像・モーシ�
 - `assets/backgrounds/*`
 - `assets/motions/*.vrma`
 
-## キャラクターモデル
+## VRMモデル
 
-`assets/vrm/はむ子.vrm`には、CC0およびMIT Licenseを適用しません。利用条件は[はむ子モデル利用規約](docs/character_model_license.md)を確認してください。
+`assets/vrm/はむ子.vrm`には、CC0およびMIT Licenseを適用しません。利用条件は[はむ子VRMモデル利用規約](docs/character_model_license.md)を確認してください。
 
 ## 利用者が追加するアセット
 

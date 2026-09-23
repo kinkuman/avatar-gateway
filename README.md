@@ -134,7 +134,7 @@ FASTER_WHISPER_LOCAL_FILES_ONLY=true
 
 ![外見変更](docs/images/avatar_change.png)
 
-Avatar Gatewayには「はむ子」のVRMが設定済みです。そのまま使う場合、この作業は必要ありません。
+Avatar Gatewayには「はむ子」という名称のサンプルVRMが設定済みです。そのまま使う場合、この作業は必要ありません。「はむ子」は同梱モデルを識別する名称であり、特定の人格や設定は付属しません。利用者が任意の名称や人格を設定して利用できます。
 
 同梱されているVRMファイルは、次の場所にあります。
 
@@ -142,7 +142,7 @@ Avatar Gatewayには「はむ子」のVRMが設定済みです。そのまま使
 assets/vrm/はむ子.vrm
 ```
 
-はむ子の利用条件は[はむ子モデル利用規約](docs/character_model_license.md)を確認してください。
+同梱VRMの利用条件は[はむ子VRMモデル利用規約](docs/character_model_license.md)を確認してください。
 
 別のVRMへ変更する場合は、使用するVRMファイルを次のフォルダへコピーします。
 
@@ -681,7 +681,7 @@ Avatar Gatewayは、次のオープンソースソフトウェアを利用して
 
 - Avatar Gateway本体のソースコード: [MIT License](LICENSE)
 - 同梱VRMA・背景画像: [CC0 1.0](ASSET_LICENSES.md)
-- `はむ子.vrm`: [モデル専用利用規約](docs/character_model_license.md)
+- `はむ子.vrm`: [VRMモデル専用利用規約](docs/character_model_license.md)
 
 利用者が`local-assets/`へ追加したモデル・モーション・画像には、それぞれの制作者が定める利用条件が適用されます。
 
