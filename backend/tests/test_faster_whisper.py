@@ -14,7 +14,10 @@ from app.services.faster_whisper import (
     TranscriptionUnavailableError,
     is_model_installed,
 )
-from scripts.download_whisper_model import install_whisper_model
+from scripts.download_whisper_model import (
+    download_model_with_progress,
+    install_whisper_model,
+)
 
 
 class FakeSegment:
@@ -177,6 +180,43 @@ def test_explicit_installer_downloads_and_verifies_model(tmp_path) -> None:
         "model": "small",
         "output_dir": str(tmp_path),
         "local_files_only": False,
+    }]
+
+
+def test_progress_downloader_uses_hugging_face_snapshot(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """進捗を隠すfaster-whisper経路を避け、公式の通常表示で必要ファイルだけ取得します。"""
+    calls: list[dict] = []
+
+    def fake_snapshot_download(repository_id: str, **options) -> str:
+        calls.append({"repository_id": repository_id, **options})
+        return str(tmp_path)
+
+    monkeypatch.setattr(
+        "scripts.download_whisper_model.snapshot_download",
+        fake_snapshot_download,
+    )
+
+    result = download_model_with_progress(
+        "small",
+        output_dir=str(tmp_path),
+        local_files_only=False,
+    )
+
+    assert result == str(tmp_path)
+    assert calls == [{
+        "repository_id": "Systran/faster-whisper-small",
+        "local_dir": str(tmp_path),
+        "local_files_only": False,
+        "allow_patterns": [
+            "config.json",
+            "preprocessor_config.json",
+            "model.bin",
+            "tokenizer.json",
+            "vocabulary.*",
+        ],
     }]
 
 

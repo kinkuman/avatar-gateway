@@ -296,6 +296,8 @@ button, textarea { font: inherit; }
 .composer textarea { width: 100%; resize: none; padding: 13px 15px; border: 1px solid #cbd5e1; border-radius: 12px; color: #172033; background: white; outline: none; }
 .composer textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px #3b82f626; }
 .composer button { align-self: stretch; min-width: 76px; border: 0; border-radius: 12px; color: white; background: #2563eb; cursor: pointer; }
+.composer button.send-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1.2; }
+.send-shortcut { font-size: 9px; font-weight: 500; opacity: .82; white-space: nowrap; }
 .composer-actions { display: flex; flex-direction: column; gap: 8px; min-width: 112px; }
 .voice-input-control { display: grid; gap: 4px; min-width: 132px; }
 .composer button.voice-input-button { min-height: 38px; color: #1e3a5f; border: 1px solid #93c5fd; background: #eff6ff; font-weight: 700; }
@@ -388,6 +390,7 @@ button, textarea { font: inherit; }
   .camera-help span { display: none; }
   .connection { padding: 10px 16px; }
   .connection > span { display: none; }
+  .send-shortcut { display: none; }
   .session-actions { width: 100%; justify-content: flex-end; }
   .session-actions button { flex: 0 0 44px; }
   .messages { padding: 20px 16px 6px; }

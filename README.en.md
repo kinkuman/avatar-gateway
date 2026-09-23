@@ -200,7 +200,7 @@ The first speech playback is started by a user send action so that the browser c
 
 ### Conversation and Standard Views
 
-Select the person-in-a-frame icon labeled `会話画面へ切り替える` to enter Conversation view, which fills the browser with the avatar. It shows only the latest question and reply in outlined subtitle-style text. Microphone controls, stop controls, current task state, errors, and approval requests remain available. Select `文字入力` to open the text box.
+Select the person-in-a-frame icon labeled `会話画面へ切り替える` to enter Conversation view, which fills the browser with the avatar. It shows only the latest question and reply in outlined subtitle-style text. Microphone controls, stop controls, current task state, errors, and approval requests remain available. Select `文字入力` to open the text box. In text input, press `Enter` for a new line or `Ctrl+Enter` (`⌘+Enter` on macOS) to send.
 
 Select the split-screen icon labeled `標準画面へ切り替える` to return to Standard view for full history, sessions, Hermes resources, and settings. Changing views keeps the current session, active conversation, and microphone state.
 

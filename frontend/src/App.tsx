@@ -1908,6 +1908,7 @@ export default function App() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleComposerKeyDown}
+              aria-keyshortcuts="Control+Enter Meta+Enter"
               placeholder="メッセージを入力"
               rows={3}
               disabled={isBusy}
@@ -1945,7 +1946,10 @@ export default function App() {
                 </button>
                 </>
               ) : (
-                <button type="submit" className="send-button" disabled={!input.trim()}>送信</button>
+                <button type="submit" className="send-button" disabled={!input.trim()}>
+                  <span>送信</span>
+                  <small className="send-shortcut" aria-hidden="true">Ctrl/⌘ + Enter</small>
+                </button>
               )}
             </div>
           </form>
