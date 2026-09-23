@@ -127,6 +127,37 @@ def test_normal_runtime_rejects_missing_model_without_downloading(tmp_path) -> N
         transcriber._transcribe_sync(b"browser-audio")
 
 
+def test_transcriber_loads_explicitly_installed_model_directory(tmp_path) -> None:
+    """明示導入先を直接渡し、キャッシュ形式として再探索される不具合を防ぎます。"""
+    for file_name in ("config.json", "model.bin", "tokenizer.json"):
+        (tmp_path / file_name).write_bytes(b"installed")
+
+    created: list[dict] = []
+
+    def factory(model_source: str, **options):
+        created.append({"model": model_source, **options})
+        return FakeModel()
+
+    config = replace(
+        main_module.settings,
+        stt_model="small",
+        stt_model_dir=tmp_path,
+        stt_local_files_only=True,
+    )
+    transcriber = FasterWhisperTranscriber(config, model_factory=factory)
+
+    transcriber._transcribe_sync(b"browser-audio")
+
+    assert created == [{
+        "model": str(tmp_path),
+        "device": config.stt_device,
+        "compute_type": config.stt_compute_type,
+        "cpu_threads": config.stt_cpu_threads,
+        "download_root": str(tmp_path),
+        "local_files_only": True,
+    }]
+
+
 def test_explicit_installer_downloads_and_verifies_model(tmp_path) -> None:
     """導入コマンドだけが通信を許可し、通常起動用の必須ファイルを揃えます。"""
     config = replace(main_module.settings, stt_model="small", stt_model_dir=tmp_path)

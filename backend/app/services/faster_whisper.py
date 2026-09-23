@@ -65,8 +65,14 @@ class FasterWhisperTranscriber:
 
         try:
             self._config.stt_model_dir.mkdir(parents=True, exist_ok=True)
+            # 明示導入したモデルはHugging Faceのキャッシュ形式ではないため、保存先を直接読み込みます。
+            model_source = (
+                str(self._config.stt_model_dir)
+                if is_model_installed(self._config)
+                else self._config.stt_model
+            )
             return factory(
-                self._config.stt_model,
+                model_source,
                 device=self._config.stt_device,
                 compute_type=self._config.stt_compute_type,
                 cpu_threads=self._config.stt_cpu_threads,
