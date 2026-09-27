@@ -110,6 +110,32 @@ STYLEBERTVITS2_ENABLED=false
 ```
 但し、音声合成がない場合、`このアプリの良さが半減してしまう`ため、導入をおすすめします。
 
+#### はむ子用音声
+
+はむ子用の音声合成モデルがBOOTHより無料でダウンロード可能です。
+[Avatar Gateway用はむ子音声データ(Style-Bert-VITS2)](https://kinkuman.booth.pm/items/8885580)
+
+#### RTX 50シリーズ対応版のStyle-Bert-VITS2を使う（任意）
+
+RTX 50シリーズで公式版のセットアップが動作しない場合は、対応パッチを含む[`codex/rtx5070-support`ブランチ](https://github.com/kinkuman/Style-Bert-VITS2/tree/codex/rtx5070-support)を利用できます。
+
+Gitを使わない場合は、次のZIPをダウンロードして展開してください。
+
+[RTX 50シリーズ対応版をZIPでダウンロード](https://github.com/kinkuman/Style-Bert-VITS2/archive/refs/heads/codex/rtx5070-support.zip)
+
+Gitを使用する場合は、次のコマンドで対応ブランチだけを取得できます。
+
+```bash
+git clone --depth 1 \
+  --branch codex/rtx5070-support \
+  --single-branch \
+  https://github.com/kinkuman/Style-Bert-VITS2.git
+cd Style-Bert-VITS2
+```
+
+取得後のインストールと起動は、ダウンロードしたStyle-Bert-VITS2内のREADMEに従ってください。
+
+
 ### 音声認識（任意）
 
 ![音声認識](docs/images/stt.png)
