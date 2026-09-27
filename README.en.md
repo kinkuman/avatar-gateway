@@ -1,5 +1,7 @@
 # Avatar Gateway
 
+![Avatar Gateway screen](docs/images/eyecatch.png)
+
 [日本語](README.md)
 
 Avatar Gateway is a local conversation application that presents replies from HermesAgent through a VRM avatar, facial expressions, lip sync, and optional speech. The initial release focuses on conversations between one person and one AI in Firefox or a Chromium-based browser. It is distributed as source code for users who can install and operate Hermes Agent and its related services.
@@ -22,27 +24,6 @@ The application interface is currently in Japanese. This document describes the 
 - Use VRM expressions, lip sync, idle movement, and motions
 - Adjust the camera and background, and interact with the avatar
 - Continue with text-only conversations when voice features are disabled
-
-## Date and Time Context for Conversations
-
-Whenever a conversation starts, the Avatar Gateway backend sends HermesAgent the current date, time, time of day, and the time of the previous user message. This applies to text input, voice input, and avatar interactions. It does not make the avatar start conversations on its own.
-
-The default time zone is Japan Standard Time (`Asia/Tokyo`), even when the server operating system uses UTC. To use another region, add a value such as the following to `.env`, then restart the backend:
-
-```env
-AVATAR_GATEWAY_TIMEZONE=Europe/London
-```
-
-If the setting is omitted, `Asia/Tokyo` is used. An invalid time-zone name prevents startup, so check its spelling. The server clock must also be correct.
-
-| Phase | Local time |
-| --- | --- |
-| `morning` | 05:00–11:59 |
-| `daytime` | 12:00–17:59 |
-| `evening` | 18:00–22:59 |
-| `night` | 23:00–04:59 |
-
-The previous conversation time is also provided within the same session, allowing Hermes to respond with the passage of time in mind. A new session is treated as the first conversation.
 
 ## Requirements
 
@@ -87,7 +68,32 @@ If you use Hermes `image_generate`, also check the generated-image cache locatio
 
 To display generated images, the Avatar Gateway backend must be able to access the Hermes image cache as local files. If Hermes and Avatar Gateway run on different servers, mount the Hermes `cache/images` directory on the Avatar Gateway server through shared storage and set `HERMES_IMAGE_CACHE_DIR` to that mounted path. Text conversations still work when the image cache is not shared, but generated images cannot be displayed.
 
+### Date and Time Context for Conversations
+
+![Date and time context](docs/images/datetime.png)
+
+Whenever a conversation starts, the Avatar Gateway backend sends HermesAgent the current date, time, time of day, and the time of the previous user message. This applies to text input, voice input, and avatar interactions. It does not make the avatar start conversations on its own.
+
+The default time zone is Japan Standard Time (`Asia/Tokyo`), even when the server operating system uses UTC. To use another region, add a value such as the following to `.env`, then restart the backend:
+
+```env
+AVATAR_GATEWAY_TIMEZONE=Europe/London
+```
+
+If the setting is omitted, `Asia/Tokyo` is used. An invalid time-zone name prevents startup, so check its spelling. The server clock must also be correct.
+
+| Phase | Local time |
+| --- | --- |
+| `morning` | 05:00–11:59 |
+| `daytime` | 12:00–17:59 |
+| `evening` | 18:00–22:59 |
+| `night` | 23:00–04:59 |
+
+The previous conversation time is also provided within the same session, allowing Hermes to respond with the passage of time in mind. A new session is treated as the first conversation.
+
 ### Optional Speech Output
+
+![Speech output settings](docs/images/tts.png)
 
 Speech output is disabled in the public configuration example. To use it, start Style-Bert-VITS2 and set `STYLEBERTVITS2_ENABLED=true` in `.env`. Configure the server and voice with these values:
 
@@ -109,7 +115,33 @@ For text-only use, leave the default unchanged:
 STYLEBERTVITS2_ENABLED=false
 ```
 
+Speech output adds much of the character to this application, so we recommend enabling it if you can.
+
+#### Voice for Hamuko
+
+A free Style-Bert-VITS2 voice model for Hamuko is available on BOOTH: [Hamuko Voice Data for Avatar Gateway](https://kinkuman.booth.pm/items/8885580).
+
+#### Style-Bert-VITS2 for RTX 50 Series (Optional)
+
+If the official Style-Bert-VITS2 setup does not work with an RTX 50 series GPU, you can use the [`codex/rtx5070-support` branch](https://github.com/kinkuman/Style-Bert-VITS2/tree/codex/rtx5070-support), which includes a compatibility patch.
+
+To install without Git, [download the RTX 50 series version as a ZIP](https://github.com/kinkuman/Style-Bert-VITS2/archive/refs/heads/codex/rtx5070-support.zip) and extract it.
+
+If you use Git, clone only that branch:
+
+```bash
+git clone --depth 1 \
+  --branch codex/rtx5070-support \
+  --single-branch \
+  https://github.com/kinkuman/Style-Bert-VITS2.git
+cd Style-Bert-VITS2
+```
+
+After downloading, follow the README in that copy of Style-Bert-VITS2 to install and start it.
+
 ### Optional Microphone Input
+
+![Speech recognition settings](docs/images/stt.png)
 
 Microphone input is also disabled in the public configuration example. Set `FASTER_WHISPER_ENABLED=true` to enable it. The default configuration uses CPU INT8 processing so that speech recognition does not consume the GPU memory used by the LLM.
 
@@ -127,6 +159,8 @@ FASTER_WHISPER_LOCAL_FILES_ONLY=true
 Avatar Gateway never downloads a Whisper model during normal startup. After installing the backend requirements, use the explicit download command described below to place the selected model under `local-assets/whisper/`. If the model is missing, only microphone input is disabled; text chat and speech output continue to work.
 
 ## 2. Change the VRM (Optional)
+
+![Change the avatar](docs/images/avatar_change.png)
 
 Avatar Gateway is already configured to use the included sample VRM named Hamuko. You can skip this section if you want to use the bundled model as provided. “Hamuko” identifies the bundled model; no specific persona or character setting is included. You may assign your own name and persona when using it.
 
@@ -200,17 +234,27 @@ The first speech playback is started by a user send action so that the browser c
 
 ### Conversation and Standard Views
 
+![Switch between Conversation and Standard views](docs/images/screen_change.png)
+
 Select the person-in-a-frame icon labeled `会話画面へ切り替える` to enter Conversation view, which fills the browser with the avatar. It shows only the latest question and reply in outlined subtitle-style text. Microphone controls, stop controls, current task state, errors, and approval requests remain available. Select `文字入力` to open the text box. In text input, press `Enter` for a new line or `Ctrl+Enter` (`⌘+Enter` on macOS) to send.
+
+![Conversation view](docs/images/conversation_mode.png)
 
 Select the split-screen icon labeled `標準画面へ切り替える` to return to Standard view for full history, sessions, Hermes resources, and settings. Changing views keeps the current session, active conversation, and microphone state.
 
 The Standard view actions are, from left to right: change view, session history, Hermes resources, settings, and new session. Hover over an icon to see its Japanese label; assistive technology receives the same label.
 
+![Standard view icons](docs/images/icons.png)
+
 On first use, only a portrait display 1024 pixels wide or narrower starts in Conversation view. Your selection is saved in that browser and is not changed merely by rotating the device. Controls avoid the safe areas used by notches and home indicators.
 
 During a conversation, the upper-left status shows actual stages reported by Hermes, such as thinking, running tools, checking results, and preparing the answer. When tools are used, it also shows the three most recent tool names, their state, and any duration provided by Hermes. Internal reasoning, tool arguments, and tool result bodies are not displayed.
 
+![Conversation progress](docs/images/work_view.png)
+
 ### Microphone Input
+
+![Microphone controls](docs/images/mic.png)
 
 Select `マイクON` and allow microphone access in the browser. When `聞き取り待機中` appears, speak normally. After 0.8 seconds of silence by default, Avatar Gateway ends the recording, transcribes it with faster-whisper on Linux, and sends the text to Hermes.
 
@@ -220,6 +264,8 @@ The browser requests echo cancellation. If speaker audio is detected as your voi
 
 - The silence duration used to decide that speech has ended, from 0.6 to 2.0 seconds
 - Speech-detection sensitivity; raise the value for noisy rooms and lower it when your voice is not detected
+
+![Browser microphone warning](docs/images/firefox_mic_warning.png)
 
 Browsers may block microphone access when a Windows browser connects to a Linux server over plain HTTP on a LAN. Use HTTPS when possible. Avatar Gateway sends audio only to its same-origin Linux backend, not to an external service.
 
@@ -237,6 +283,8 @@ In Chrome or another Chromium-based browser:
    http://192.168.1.20:8000
    ```
 
+   ![Chrome insecure origin setting](docs/images/chrome_Insecure_origins.png)
+
 4. Restart the browser.
 5. Open Avatar Gateway again and allow microphone access.
 
@@ -251,12 +299,18 @@ In Firefox:
    media.getusermedia.insecure.enabled
    ```
 
+   ![Firefox insecure device setting](docs/images/firefox_about_config.png)
+
+   ![Firefox insecure media setting](docs/images/firefox_about_config2.png)
+
 4. Restart Firefox.
 5. Open Avatar Gateway again and allow microphone access.
 
 These settings weaken browser security restrictions. When they are no longer needed, restore the Chrome or Chromium setting to `Default` and both Firefox settings to `false`.
 
 ### UI Settings
+
+![UI settings](docs/images/setting.png)
 
 Select the gear icon labeled `設定` to configure:
 
@@ -275,7 +329,13 @@ To use the current settings as defaults for new browsers, select `現在値を�
 
 #### Interacting with the Avatar
 
+![Avatar interaction mode](docs/images/fureai.png)
+
 Select `ふれあい` on the avatar screen to switch from camera controls to interaction mode. You can instead hold the Space key outside the text field to enable it temporarily.
+
+##### Responsive Regions
+
+![Avatar interaction regions](docs/images/fureai_setting.png)
 
 The head and hands respond by default. Ears and tail can be enabled in Settings. Clicking or tapping a region produces a physical reaction, and repeated touches are grouped and reported with their count. Dragging across a region is treated as stroking; the body part follows slightly and returns when released.
 
@@ -283,9 +343,17 @@ The head and hands respond by default. Ears and tail can be enabled in Settings.
 
 New interactions are not sent while Hermes is responding, running a tool, waiting for approval, or processing audio. Draft text in the normal input field is preserved.
 
-Settings can disable individual regions. Ears and tail are off by default. If a model does not match the interaction areas, use the hit-area display and editor to adjust them. Changes are saved per VRM filename and can also be saved as the server defaults.
+Settings can disable individual regions. Ears and tail are off by default.
+
+#### Adjusting Hit Areas
+
+![Interaction hit area editor](docs/images/fureai_edit.png)
+
+If a model does not match the interaction areas, use the hit-area display and editor to adjust them. Changes are saved per VRM filename and can also be saved as the server defaults.
 
 #### Background Images
+
+![Background image settings](docs/images/wallpaper.png)
 
 Avatar Gateway includes square backgrounds intended to place a VRM near the center:
 
@@ -308,13 +376,19 @@ No backend restart is required. In Settings, select `画像一覧を再読込`, 
 
 ### Starting a New Session
 
+![Start a new session](docs/images/new_session.png)
+
 Select the speech-bubble-plus icon labeled `新しいセッション`. After confirmation, Avatar Gateway marks the current Hermes session as completed and shows an empty conversation. The session and its messages remain in Hermes history. A new Hermes session is created when the next message is sent.
 
 The action is disabled while Hermes is working, waiting for approval, synthesizing speech, or speaking. If the completion request fails, the current conversation remains visible.
 
 ### Viewing Saved Conversations
 
+![Saved sessions](docs/images/old_session.png)
+
 Select the arrow-around-a-clock icon labeled `セッション履歴`. Avatar Gateway lists only sessions that it created, ordered by most recent update. It initially loads 50 entries.
+
+![Session history](docs/images/session_history.png)
 
 Selecting an entry only previews its official history. It does not change the active destination session. An unfinished session can be reopened after Avatar Gateway refreshes its state. A completed session can be branched into a new child session without modifying the original history.
 
@@ -323,6 +397,8 @@ The details include message count, tool count, input, output and reasoning token
 For a completed session that is not currently open, `この履歴を削除` permanently deletes its conversation history from the Hermes SessionDB after confirmation. This cannot be undone. The backend refuses to delete an active session.
 
 ### Viewing Hermes Skills and Toolsets
+
+![Hermes Skills and Toolsets](docs/images/skill_and_tools.png)
 
 Select the four-tile icon labeled `機能一覧` to view:
 
@@ -363,9 +439,13 @@ Previously generated audio is not played automatically after reconnecting. If th
 
 ### Task Progress and Approval
 
+![Task progress](docs/images/work_state.png)
+
 When Hermes uses tools, the conversation area shows tool name, start time, running, success or failure state, and any duration provided by Hermes. Avatar Gateway does not invent tool result text or file diffs that Hermes did not provide.
 
 When Hermes pauses for approval of a risky action, a yellow panel displays its explanation and a command with secrets removed. The choices are:
+
+![Approve or deny a task](docs/images/approval.png)
 
 - `今回だけ許可`: allow only the current request; normally choose this
 - `拒否`: deny the current request
@@ -375,6 +455,8 @@ When Hermes pauses for approval of a risky action, a yellow panel displays its e
 Buttons are disabled while an approval response is being sent. Resolved or expired requests are marked accordingly.
 
 ### Previewing VRMA Motions
+
+![Preview a VRMA motion](docs/images/vrma_add.png)
 
 Finished VRMA files are bundled under `assets/motions/`. No conversion or generation is required after downloading Avatar Gateway.
 
@@ -430,6 +512,8 @@ An invalid catalog stops only motion integration; text chat and speech continue.
 If a VRMA intended as a static pose returns immediately after playing, set `"playback": "pose"` for that catalog entry.
 
 ### Camera Controls
+
+![Camera controls](docs/images/camera.png)
 
 When a VRM loads, the camera is automatically positioned so that the whole body fits on screen.
 
@@ -525,7 +609,52 @@ If the screen reports that Hermes does not support the Capabilities API, check t
 
 To return to the default Profile, restore the values shown in [Initial Configuration](#1-initial-configuration) and restart the Avatar Gateway backend.
 
+## Run Speech Recognition on a GPU (Optional)
+
+Speech recognition uses the CPU by default. To run faster-whisper on an NVIDIA GPU, first follow the [official faster-whisper GPU requirements](https://github.com/SYSTRAN/faster-whisper#gpu) and install the compatible cuBLAS for CUDA 12 and cuDNN 9.
+
+Change the speech recognition settings in `.env`:
+
+```env
+FASTER_WHISPER_DEVICE=cuda
+FASTER_WHISPER_COMPUTE_TYPE=float16
+```
+
+To use less VRAM, you can select `FASTER_WHISPER_COMPUTE_TYPE=int8_float16` instead. If Hermes or another application uses the same GPU, check their combined VRAM usage. If they compete for memory, return to `cpu` and `int8`.
+
+Restart the backend after changing the settings, then try microphone input once. To check the device and compute type actually used when the model loads, start the backend with `CT2_VERBOSE=1` and look for `device cuda:0` in the log.
+
+### Change the Speech Recognition Model (Optional)
+
+To use a model other than the default `small`, change the model name in `.env`. For Japanese speech, choose a multilingual model without the `.en` suffix.
+
+| Model | When to use it |
+| --- | --- |
+| `tiny` | Fastest and lightest, with lower recognition accuracy. |
+| `base` | A lightweight choice with better accuracy than `tiny`. |
+| `small` | Default balance of speed, accuracy, and resource use. |
+| `medium` | Higher accuracy than `small`, with more processing time and resource use. |
+| `large-v3` | Prioritizes accuracy and needs substantial VRAM and processing time. |
+| `turbo` | Prioritizes speed while retaining accuracy close to larger models. |
+
+For example, to use `medium`, set:
+
+```env
+FASTER_WHISPER_MODEL=medium
+```
+
+Stop the backend, then run the same model download command again. The download shows its progress:
+
+```bash
+cd backend
+.venv/bin/python -m scripts.download_whisper_model
+```
+
+Start the backend after the download finishes. The model goes to the default location, so no additional path setting is needed. To switch back to another model, change `FASTER_WHISPER_MODEL` and run the same download command again.
+
 ## Troubleshooting
+
+![Troubleshooting](docs/images/qanda.png)
 
 ### Cannot Connect to Hermes
 
