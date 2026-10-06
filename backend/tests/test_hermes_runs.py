@@ -8,6 +8,7 @@ import pytest
 
 from app.services import hermes_runs as hermes_runs_module
 from app.services import daily_state as daily_state_module
+from app.services.daily_state import present_daily_input
 from app.services.hermes import HermesConflictError, HermesError, HermesSession, HermesSessionMessage
 from app.services.hermes_runs import HermesRunCoordinator
 
@@ -18,7 +19,7 @@ RUN_ID = "run_0123456789abcdef0123456789abcdef"
 
 @pytest.mark.asyncio
 async def test_daily_context_refreshes_each_run_and_preserves_instructions(monkeypatch) -> None:
-    """同じセッションの時間帯変更を反映し、既存指示とユーザー本文を保つことを確認します。"""
+    """日時更新と再起動後も、固定指示と保存済み発言を同じ文字列で再送することを確認します。"""
     class Clock(datetime):
         """外部時計を変更せず、会話開始時刻だけを制御します。"""
 
@@ -31,17 +32,44 @@ async def test_daily_context_refreshes_each_run_and_preserves_instructions(monke
 
     monkeypatch.setattr(daily_state_module, "datetime", Clock)
     client = _FakeHermesClient(events=[{"event": "run.completed", "output": "完了"}])
-    coordinator = HermesRunCoordinator(lambda: client)
+    saved_messages = []
+
+    async def get_saved_messages(session_id):
+        """Hermesに保存された日時付き本文を、加工せず次のRunへ返します。"""
+        assert session_id == SESSION_ID
+        return tuple(saved_messages)
+
+    monkeypatch.setattr(client, "get_session_messages", get_saved_messages)
+    previous_instructions = None
     for hour, phase in [(17, "daytime"), (21, "evening")]:
         Clock.hour = hour
+        # 作り直しても保存済み履歴だけで再送でき、補助キャッシュに依存しないことを確認します。
+        coordinator = HermesRunCoordinator(lambda: client)
         await coordinator.start_run(SESSION_ID, "今の時間帯は？", "既存の音声・モーション指示")
         _ = [event async for event in coordinator.stream_events(RUN_ID)]
         sent = client.started_with
-        assert sent["input"] == "今の時間帯は？"
+        assert present_daily_input(sent["input"]) == "今の時間帯は？"
         assert sent["instructions"].startswith("既存の音声・モーション指示\n\n")
-        assert f"現在日時: 2026-09-07 {hour}:10" in sent["instructions"]
-        assert f"現在の時間帯: {phase}" in sent["instructions"]
-        assert sent["instructions"].count("現在日時:") == 1
+        assert f"現在日時: 2026-09-07 {hour}:10" in sent["input"]
+        assert f"現在の時間帯: {phase}" in sent["input"]
+        assert sent["input"].count("現在日時:") == 1
+        assert "現在日時:" not in sent["instructions"]
+        if previous_instructions is not None:
+            assert sent["instructions"] == previous_instructions
+            assert sent["conversation_history"] == [
+                {"role": message.data["role"], "content": message.data["content"]}
+                for message in saved_messages
+            ]
+            assert "現在日時: 2026-09-07 17:10" in sent["conversation_history"][0]["content"]
+            assert "前回会話日時: 2026-09-07 17:10" in sent["input"]
+        previous_instructions = sent["instructions"]
+        saved_messages.extend([
+            HermesSessionMessage({
+                "role": "user", "content": sent["input"],
+                "timestamp": datetime.fromisoformat(f"2026-09-07T{hour}:10:00+09:00").timestamp(),
+            }),
+            HermesSessionMessage({"role": "assistant", "content": "完了"}),
+        ])
 
 
 class _FakeHermesClient:
@@ -141,7 +169,7 @@ async def test_coordinator_subscribes_once_and_replays_sanitized_events() -> Non
     assert client.stream_calls == 1
     assert client.started_with == {
         "session_id": SESSION_ID,
-        "input": "作業して",
+        "input": client.started_with["input"],
         "conversation_history": [
             {"role": "user", "content": "以前の質問"},
             {"role": "assistant", "content": "以前の回答"},
@@ -149,7 +177,8 @@ async def test_coordinator_subscribes_once_and_replays_sanitized_events() -> Non
         ],
         "instructions": client.started_with["instructions"],
     }
-    assert "現在の時間帯:" in client.started_with["instructions"]
+    assert present_daily_input(client.started_with["input"]) == "作業して"
+    assert "現在の時間帯:" in client.started_with["input"]
     assert "現在の時間帯と矛盾する挨拶や発言をしないこと。" in client.started_with["instructions"]
     assert [event["type"] for event in first] == [
         "agent.started",

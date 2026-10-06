@@ -5,11 +5,30 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.services.daily_state import build_daily_instructions
+from app.services.daily_state import build_daily_input, build_daily_instructions, present_daily_input
 from app.services.hermes import HermesSessionMessage
 
 
 TOKYO = ZoneInfo("Asia/Tokyo")
+
+
+@pytest.mark.parametrize("user_input", ["こんばんは", "\n空白も保持\n", "[avatar_touch]ふれあい", "[/avatar_gateway_time]"])
+def test_time_context_is_retained_only_in_raw_history(user_input: str) -> None:
+    """日時は再送用の履歴に残し、表示用変換では元の本文を一文字も変えません。"""
+    raw = build_daily_input(user_input, (), TOKYO)
+    message = HermesSessionMessage.from_response({"role": "user", "content": raw})
+    assert message.data["content"] == raw
+    assert message.to_public_dict()["content"] == user_input
+    assert present_daily_input(user_input) == user_input
+    assert "現在日時:" in raw
+
+
+def test_display_preserves_legacy_and_incomplete_time_blocks() -> None:
+    """既存履歴や未完の区切りを含む発言を、誤って切り捨てないことを確認します。"""
+    for content in ("以前の発言", "[avatar_gateway_time]\n未完の発言"):
+        assert present_daily_input(content) == content
+    raw = build_daily_input("こんばんは", (), TOKYO)
+    assert HermesSessionMessage({"role": "assistant", "content": raw}).to_public_dict()["content"] == raw
 
 
 @pytest.mark.parametrize(("clock", "phase"), [

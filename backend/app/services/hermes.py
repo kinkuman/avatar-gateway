@@ -10,6 +10,7 @@ from uuid import uuid4
 import httpx
 
 from ..config import Settings
+from .daily_state import present_daily_input
 REQUIRED_AGENT_FEATURES = (
     "run_submission",
     "run_status",
@@ -125,7 +126,11 @@ class HermesSessionMessage:
 
     def to_public_dict(self) -> dict[str, Any]:
         """reasoningやtool_callsを含まない会話履歴を返します。"""
-        return dict(self.data)
+        result = dict(self.data)
+        # 保存された日時はLLM再送用に残し、会話欄やふれあい表示には混ぜません。
+        if result.get("role") == "user" and isinstance(result.get("content"), str):
+            result["content"] = present_daily_input(result["content"])
+        return result
 
 
 @dataclass(frozen=True)

@@ -2,10 +2,32 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
-from .hermes import HermesSessionMessage
+if TYPE_CHECKING:
+    from .hermes import HermesSessionMessage
+
+
+# 時刻の値を履歴へ固定し、表示時だけ取り除くためのアプリ専用区切りです。
+_TIME_CONTEXT_START = "[avatar_gateway_time]\n"
+_TIME_CONTEXT_END = "\n[/avatar_gateway_time]\n\n"
+DAILY_TIME_RULES = (
+    "今回のユーザー発言の先頭にある[avatar_gateway_time]は、アプリが付けた時間情報です。\n"
+    "現在日時と時間帯を認識して会話すること。\n"
+    "現在の時間帯と矛盾する挨拶や発言をしないこと。\n"
+    "現在の時間帯には、アプリが指定した値を使うこと。\n"
+    "過去の会話に登場する日時を現在日時として扱わないこと。"
+)
+
+
+def present_daily_input(content: str) -> str:
+    """LLM用の保存本文を変えず、画面には利用者が入力した本文だけを返します。"""
+    if content.startswith(_TIME_CONTEXT_START):
+        _, separator, user_input = content.partition(_TIME_CONTEXT_END)
+        if separator:
+            return user_input
+    return content
 
 
 @dataclass(frozen=True)
@@ -18,7 +40,7 @@ class DailyState:
 
 
 def build_daily_instructions(
-    messages: tuple[HermesSessionMessage, ...],
+    messages: tuple["HermesSessionMessage", ...],
     timezone: ZoneInfo,
     now: datetime | None = None,
 ) -> str:
@@ -56,9 +78,19 @@ def build_daily_instructions(
         f"現在日時: {state.date.isoformat()} {current:%H:%M}\n"
         f"タイムゾーン: {timezone.key}\n"
         f"現在の時間帯: {state.phase}\n"
-        f"前回会話日時: {previous_label}\n\n"
-        "現在日時と時間帯を認識して会話すること。\n"
-        "現在の時間帯と矛盾する挨拶や発言をしないこと。\n"
-        "現在の時間帯には、アプリが指定した値を使うこと。\n"
-        "過去の会話に登場する日時を現在日時として扱わないこと。"
+        f"前回会話日時: {previous_label}"
+    )
+
+
+def build_daily_input(
+    user_input: str,
+    messages: tuple["HermesSessionMessage", ...],
+    timezone: ZoneInfo,
+) -> str:
+    """変動する日時を今回の発言へ付け、Hermesの保存履歴で同じ文字列を再送します。"""
+    return (
+        _TIME_CONTEXT_START
+        + build_daily_instructions(messages, timezone)
+        + _TIME_CONTEXT_END
+        + user_input
     )

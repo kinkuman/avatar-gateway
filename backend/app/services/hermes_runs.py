@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .daily_state import build_daily_instructions
+from .daily_state import DAILY_TIME_RULES, build_daily_input
 
 from .hermes import (
     HermesClient,
@@ -363,12 +363,11 @@ class HermesRunCoordinator:
         client = self._client_factory()
         await client.get_session(session_id)
         messages = await client.get_session_messages(session_id)
-        # 全入力経路で最新時刻を渡し、音声やモーションの既存指示も維持します。
-        daily_instructions = build_daily_instructions(messages, self._timezone)
-        instructions = "\n\n".join(part for part in (instructions, daily_instructions) if part)
+        # システム指示を固定し、時刻の更新で保存チェックポイントが不一致になるのを防ぎます。
+        instructions = "\n\n".join(part for part in (instructions, DAILY_TIME_RULES) if part)
         started = await client.start_run(
             session_id,
-            user_input,
+            build_daily_input(user_input, messages, self._timezone),
             self._conversation_history(messages),
             instructions,
         )
