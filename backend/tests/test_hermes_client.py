@@ -503,3 +503,53 @@ async def test_get_run_rejects_mismatched_upstream_run_id() -> None:
 
     with pytest.raises(HermesError, match="Run IDが一致しません"):
         await HermesClient(config, transport).get_run(RUN_ID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_session_meta", [False, True], ids=["legacy", "with-metadata"])
+async def test_session_metadata_is_excluded_from_display_and_run_history(
+    include_session_meta: bool,
+) -> None:
+    """新旧履歴の発言とツール結果を保ち、管理情報を公開・LLM再送しません。"""
+    from app.services.hermes_runs import HermesRunCoordinator
+
+    conversation = [
+        {"role": "user", "content": "調べて"},
+        {"role": "assistant", "content": "確認します"},
+        {"role": "tool", "content": "完了"},
+    ]
+    raw_messages = [*conversation]
+    if include_session_meta:
+        # 現行Hermes同様、回答後の管理行で履歴全体の取得が失敗しないことを確認します。
+        raw_messages.append({
+            "role": "session_meta",
+            "content": "internal session metadata",
+            "platform": "api_server",
+            "model": "internal-model",
+            "tools": [{"name": "internal-tool"}],
+        })
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, json={
+        "data": raw_messages,
+    }))
+    config = replace(Settings(), hermes_api_key="secret-value")
+
+    messages = await HermesClient(config, transport).get_session_messages(OWNED_SESSION_ID)
+
+    assert [message.to_public_dict() for message in messages] == conversation
+    assert HermesRunCoordinator._conversation_history(messages) == conversation
+    assert len(raw_messages) == len(conversation) + int(include_session_meta)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["unknown", "developer", "", None])
+async def test_session_messages_still_reject_unknown_roles(role: str | None) -> None:
+    """既知の管理行への対応で、未知のroleまで無条件に通さないことを確認します。"""
+    from app.services.hermes import HermesError
+
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, json={
+        "data": [{"role": role, "content": "unexpected message"}],
+    }))
+    config = replace(Settings(), hermes_api_key="secret-value")
+
+    with pytest.raises(HermesError, match="Hermes Sessionメッセージのroleが正しくありません"):
+        await HermesClient(config, transport).get_session_messages(OWNED_SESSION_ID)

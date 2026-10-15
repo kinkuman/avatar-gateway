@@ -102,11 +102,12 @@ class HermesSessionMessage:
 
     @classmethod
     def from_response(cls, payload: Any) -> "HermesSessionMessage | None":
-        """systemメッセージを除外し、安全な会話履歴だけへ変換します。"""
+        """内部管理メッセージを除外し、安全な会話履歴だけへ変換します。"""
         if not isinstance(payload, dict):
             raise HermesError("Hermes Sessionメッセージの応答形式が正しくありません")
         role = payload.get("role")
-        if role == "system":
+        # 新旧Hermesの履歴を扱い、管理情報を会話表示や次のRunへ混ぜません。
+        if role in {"system", "session_meta"}:
             return None
         if role not in {"user", "assistant", "tool"}:
             raise HermesError("Hermes Sessionメッセージのroleが正しくありません")
