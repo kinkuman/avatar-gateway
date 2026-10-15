@@ -29,6 +29,21 @@ interface Props {
   backgrounds: BackgroundAsset[]
   backgroundsLoading: boolean
   backgroundsError: string
+  gazeEnabled: boolean
+  gazeEnrolled: boolean
+  gazeStatus: string
+  gazePending: number | null
+  gazeJobFound: boolean | null
+  faceFollow: boolean
+  faceFollowStatus: string
+  detectEase: boolean
+  gazeMessageSync: boolean
+  onGazeEnabled: (enabled: boolean) => void
+  onFaceFollow: (enabled: boolean) => void
+  onDetectEase: (enabled: boolean) => void
+  onGazeMessageSync: (enabled: boolean) => void
+  onGazeEnroll: () => void
+  onGazeClear: () => void
   onChange: (changes: UiSettingsOverrides) => void
   onReloadBackgrounds: () => void
   onResetBrowser: () => void
@@ -45,6 +60,21 @@ export default function SettingsPanel({
   backgrounds,
   backgroundsLoading,
   backgroundsError,
+  gazeEnabled,
+  gazeEnrolled,
+  gazeStatus,
+  gazePending,
+  gazeJobFound,
+  faceFollow,
+  faceFollowStatus,
+  detectEase,
+  gazeMessageSync,
+  onGazeEnabled,
+  onFaceFollow,
+  onDetectEase,
+  onGazeMessageSync,
+  onGazeEnroll,
+  onGazeClear,
   onChange,
   onReloadBackgrounds,
   onResetBrowser,
@@ -235,6 +265,18 @@ export default function SettingsPanel({
               onChange={(event) => onChange({ speech_volume: Number(event.target.value) })}
             />
           </label>
+          <label className="settings-text">
+            <span>
+              <strong>承認をお願いするときの発話</strong>
+              <small>権限の承認ウィンドウを出すとき、この文章を読み上げます。空にすると読み上げません。</small>
+            </span>
+            <input
+              type="text"
+              maxLength={80}
+              value={settings.approval_prompt}
+              onChange={(event) => onChange({ approval_prompt: event.target.value })}
+            />
+          </label>
           <label className="settings-range voice-input-setting">
             <span>
               <strong>話し終わりの無音時間</strong>
@@ -274,6 +316,75 @@ export default function SettingsPanel({
             />
           </label>
           <small>周囲の音で反応する場合は感度の数値を上げ、声を拾わない場合は下げます。</small>
+        </section>
+
+        <section className="ui-settings-section">
+          <h3>顔（視線）の検出</h3>
+          <p>ウェブカメラを使った視線・顔の機能をまとめて設定します。画像は保存しません。</p>
+
+          <div className="gaze-group">
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={gazeEnabled}
+                onChange={(event) => onGazeEnabled(event.target.checked)}
+              />
+              <span>
+                <strong>視線で話しかける</strong>
+                <small>登録した顔がウェブカメラを向くと、Hermesのcronが出した短い文を読み上げます。指示文は <code>docs/gaze_speech_hermes.md</code> です。</small>
+              </span>
+            </label>
+            <div className="settings-row-actions">
+              <button type="button" className="primary" onClick={onGazeEnroll}>顔を登録</button>
+              <button type="button" disabled={!gazeEnrolled} onClick={onGazeClear}>登録を消す</button>
+            </div>
+            <small className="gaze-setting-status">
+              <span>
+                {gazeEnrolled ? 'このブラウザに顔を登録済みです。' : '顔は未登録です。'}
+                {gazePending === null ? '' : `未読は${gazePending}件です。`}
+              </span>
+              {gazeJobFound === false ? <span>Hermes側に avatar-gateway-gaze のジョブがまだ見当たりません。</span> : null}
+              {gazeStatus ? <span>{`状態: ${gazeStatus}`}</span> : null}
+              <span>ブラウザ設定のリセットでは、この顔登録は消えません。</span>
+            </small>
+
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={faceFollow}
+                onChange={(event) => onFaceFollow(event.target.checked)}
+              />
+              <span>
+                <strong>顔の位置を見る</strong>
+                <small>ウェブカメラに映った顔の位置へ、視線と顔の向きを向けます。登録した顔があるときはその人だけを見ます。未登録のときは、いちばん大きく映っている顔を見ます。</small>
+              </span>
+            </label>
+            {faceFollow && <small className="gaze-setting-status">状態: {faceFollowStatus}</small>}
+
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={detectEase}
+                onChange={(event) => onDetectEase(event.target.checked)}
+              />
+              <span>
+                <strong>顔の検出を見やすくする</strong>
+                <small>暗いときだけ、検出用の画面の明るさを上げます。視線発話、顔の位置を見る、顔の登録で使います。明るい映像はそのままです。本人かどうかの判定は変えません。</small>
+              </span>
+            </label>
+
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={gazeMessageSync}
+                onChange={(event) => onGazeMessageSync(event.target.checked)}
+              />
+              <span>
+                <strong>視線発話をメッセージに同期</strong>
+                <small>視線で話しかけた内容を、次のユーザー発言と一緒に送ります。会話欄ではHermes側の吹き出しとして表示します。</small>
+              </span>
+            </label>
+          </div>
         </section>
 
         <section className="ui-settings-section">

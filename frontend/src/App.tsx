@@ -3,17 +3,24 @@ import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState 
 
 import ApprovalPanel from './components/ApprovalPanel'
 import AgentResourcesPanel from './components/AgentResourcesPanel'
+import ModelSelectMenu from './components/ModelSelectMenu'
 import ConversationActivityOverlay from './components/ConversationActivityOverlay'
 import ConversationModeOverlay from './components/ConversationModeOverlay'
 import MarkdownMessage from './components/MarkdownMessage'
 import SessionActionIcon from './components/SessionActionIcon'
 import SessionHistoryPanel from './components/SessionHistoryPanel'
 import SettingsPanel from './components/SettingsPanel'
+import GazeSpeechMonitor from './components/GazeSpeechMonitor'
 import ToolTimeline from './components/ToolTimeline'
 import VoiceInputControl from './components/VoiceInputControl'
 import VrmStage from './components/VrmStage'
 import { advanceActiveRun, clearActiveRun, readActiveRun, saveActiveRun } from './lib/activeRun'
 import { readDisplayMode, saveDisplayMode } from './lib/displayMode'
+import type { FaceFollowAngles } from './lib/faceFollow'
+import { readGazeSettings, writeGazeSettings } from './lib/gazeFace'
+import { appendGazeTranscript } from './lib/gazeTranscript'
+import { splitGatewayMessages } from './lib/gatewayMessage'
+import { isNewSessionDisabled } from './lib/newSessionAvailability'
 import { readSessionMessages, readSessionSummary } from './lib/session'
 import { consumeSse } from './lib/sse'
 import {
@@ -119,6 +126,11 @@ interface ConversationSession {
 }
 
 const HERMES_SESSION_STORAGE_KEY = 'avatar-gateway.hermes-session-id'
+
+const ttsProviderLabels: Record<string, string> = {
+  stylebertvits2: 'Style-Bert-VITS2',
+  openai: 'OpenAI互換API',
+}
 
 type PreparedSpeech =
   | { status: 'ready'; buffer: AudioBuffer }
@@ -320,6 +332,192 @@ async function playPreparedSpeech(
     source.disconnect()
     analyser.disconnect()
     gain.disconnect()
+  }
+}
+
+interface PcmPlayback {
+  push(pcm: ArrayBuffer): void
+  close(): void
+  fail(): void
+  play(): Promise<SpeechPlaybackResult>
+}
+
+/** base64のPCMを、AudioContextが再生できる単声のバッファへ変換します。 */
+function decodeBase64Pcm(value: string): ArrayBuffer {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes.buffer
+}
+
+function pcmToBuffer(context: AudioContext, pcm: ArrayBuffer, sampleRate: number): AudioBuffer | null {
+  const byteLength = pcm.byteLength - (pcm.byteLength % 2)
+  if (byteLength < 2) return null
+  const view = new DataView(pcm, 0, byteLength)
+  const buffer = context.createBuffer(1, byteLength / 2, sampleRate)
+  const channel = buffer.getChannelData(0)
+  for (let index = 0; index < channel.length; index += 1) {
+    channel[index] = view.getInt16(index * 2, true) / 32768
+  }
+  return buffer
+}
+
+/** SSEで届くPCMを、文の完成を待たずに順番へ連結して再生します。 */
+function createPcmPlayback(
+  request: SpeechRequest,
+  sampleRate: number,
+  context: AudioContext,
+  session: ConversationSession,
+  volume: number,
+  setAnalyser: (value: AnalyserNode | null) => void,
+  onStarted: () => void,
+  onSettled: () => void,
+): PcmPlayback {
+  const sources: AudioBufferSourceNode[] = []
+  const queued: AudioBuffer[] = []
+  let analyser: AnalyserNode | null = null
+  let gain: GainNode | null = null
+  let timeoutId: number | null = null
+  let nextTime = 0
+  let startedAt = 0
+  let started = false
+  let playing = false
+  let closed = false
+  let settled = false
+  let resolveEnded: (result: SpeechPlaybackResult) => void = () => undefined
+  const ended = new Promise<SpeechPlaybackResult>((resolve) => {
+    resolveEnded = resolve
+  })
+
+  const stopSources = () => {
+    for (const source of sources) {
+      try {
+        source.stop()
+      } catch {
+        // 開始前や終了済みの音源は、他のチャンクの停止を妨げません。
+      }
+    }
+  }
+
+  const finish = (result: SpeechPlaybackResult) => {
+    if (settled) return
+    settled = true
+    if (timeoutId !== null) window.clearTimeout(timeoutId)
+    session.speechController.signal.removeEventListener('abort', onAbort)
+    if (session.activeSource && sources.includes(session.activeSource)) session.activeSource = null
+    onSettled()
+    setAnalyser(null)
+    for (const source of sources) source.disconnect()
+    analyser?.disconnect()
+    gain?.disconnect()
+    resolveEnded(result)
+  }
+
+  const onAbort = () => {
+    stopSources()
+    finish({ status: 'cancelled', error: null })
+  }
+
+  const armTimeout = () => {
+    if (timeoutId !== null) window.clearTimeout(timeoutId)
+    const remainingMs = Math.max(0, (nextTime - context.currentTime) * 1000) + 8000
+    timeoutId = window.setTimeout(() => {
+      stopSources()
+      const reason = '音声再生がタイムアウトしました'
+      void notifySpeech('speech.failed', request, { reason })
+      finish({ status: 'failed', error: reason })
+    }, remainingMs)
+  }
+
+  let latestEnded = false
+
+  const completePlayback = () => {
+    if (settled) return
+    if (session.cancelled || session.speechStopped || session.speechController.signal.aborted) {
+      finish({ status: 'cancelled', error: null })
+      return
+    }
+    void notifySpeech('speech.completed', request, {
+      played_ms: started ? Math.round(performance.now() - startedAt) : 0,
+    })
+    finish({ status: 'completed', error: null })
+  }
+
+  const pump = () => {
+    if (!playing || settled) return
+    if (session.cancelled || session.speechStopped || session.speechController.signal.aborted) {
+      finish({ status: 'cancelled', error: null })
+      return
+    }
+    if (!analyser || !gain) {
+      analyser = context.createAnalyser()
+      analyser.fftSize = 2048
+      gain = context.createGain()
+      gain.gain.value = volume
+      analyser.connect(gain)
+      gain.connect(context.destination)
+      setAnalyser(analyser)
+      session.speechController.signal.addEventListener('abort', onAbort, { once: true })
+    }
+    while (queued.length > 0) {
+      const buffer = queued.shift()
+      if (!buffer) continue
+      const source = context.createBufferSource()
+      source.buffer = buffer
+      source.connect(analyser)
+      latestEnded = false
+      source.onended = () => {
+        if (source !== sources[sources.length - 1]) return
+        latestEnded = true
+        if (!closed || queued.length > 0) return
+        completePlayback()
+      }
+      const startAt = Math.max(nextTime, context.currentTime + 0.02)
+      source.start(startAt)
+      nextTime = startAt + buffer.duration
+      sources.push(source)
+      session.activeSource = source
+      if (!started) {
+        started = true
+        startedAt = performance.now()
+        onStarted()
+        void notifySpeech('speech.started', request)
+      }
+    }
+    if (started) armTimeout()
+    if (closed && queued.length === 0 && (sources.length === 0 || latestEnded)) {
+      completePlayback()
+    }
+  }
+
+  return {
+    push(pcm: ArrayBuffer) {
+      if (closed || settled) return
+      const buffer = pcmToBuffer(context, pcm, sampleRate)
+      if (!buffer) return
+      queued.push(buffer)
+      pump()
+    },
+    close() {
+      closed = true
+      pump()
+    },
+    fail() {
+      closed = true
+      stopSources()
+      finish({ status: 'failed', error: '音声を生成できませんでした。' })
+    },
+    async play() {
+      if (settled) return ended
+      if (session.cancelled || session.speechStopped || session.speechController.signal.aborted) {
+        finish({ status: 'cancelled', error: null })
+        return ended
+      }
+      playing = true
+      await context.resume()
+      pump()
+      return ended
+    },
   }
 }
 
@@ -575,9 +773,20 @@ export default function App() {
   const [backgroundAssets, setBackgroundAssets] = useState<BackgroundAsset[]>([])
   const [backgroundsLoading, setBackgroundsLoading] = useState(false)
   const [backgroundsError, setBackgroundsError] = useState('')
+  const [gazeSettings, setGazeSettings] = useState(() => readGazeSettings(localStorage))
+  const [gazeEnrolling, setGazeEnrolling] = useState(false)
+  const [gazeStatus, setGazeStatus] = useState('停止中')
+  const [faceFollowStatus, setFaceFollowStatus] = useState('停止中')
+  const faceFollowRef = useRef<FaceFollowAngles | null>(null)
+  const [gazePending, setGazePending] = useState<number | null>(null)
+  const [gazeJobFound, setGazeJobFound] = useState<boolean | null>(null)
+  const [gazeRefresh, setGazeRefresh] = useState(0)
+  const [gazeTranscript, setGazeTranscript] = useState('')
   const logRef = useRef<HTMLDivElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const activeSessionRef = useRef<ConversationSession | null>(null)
+  const conversationActiveRef = useRef(false)
+  const gazeStopRef = useRef<(() => void) | null>(null)
   const sessionIdRef = useRef(0)
   const displayedRunIdRef = useRef<string | null>(null)
   const automaticMotionRef = useRef<string | null>(null)
@@ -586,6 +795,31 @@ export default function App() {
   const backgroundsLoadingRef = useRef(false)
   const uiOverridesRef = useRef(uiOverrides)
   const isBusy = conversationActive
+  conversationActiveRef.current = conversationActive
+
+  useEffect(() => {
+    if (!gazeSettings.enabled) return
+    const controller = new AbortController()
+
+    const load = async () => {
+      try {
+        const response = await fetch('/api/gaze-speech', { signal: controller.signal })
+        if (!response.ok) return
+        const data = await response.json() as { pending?: unknown, job_found?: unknown }
+        if (typeof data.pending === 'number') setGazePending(data.pending)
+        if (typeof data.job_found === 'boolean') setGazeJobFound(data.job_found)
+      } catch (cause) {
+        if (!isAbortError(cause)) setGazeJobFound(null)
+      }
+    }
+
+    void load()
+    const timer = window.setInterval(() => void load(), 15_000)
+    return () => {
+      controller.abort()
+      window.clearInterval(timer)
+    }
+  }, [gazeRefresh, gazeSettings.enabled])
   const displayModeActionLabel = displayMode === 'conversation' ? '標準画面へ切り替える' : '会話画面へ切り替える'
   const historyActionLabel = sessionHistoryOpen ? '会話に戻る' : 'セッション履歴'
   const resourcesActionLabel = agentResourcesOpen ? '会話に戻る' : '機能一覧'
@@ -878,6 +1112,7 @@ export default function App() {
     sessionStorage.setItem(HERMES_SESSION_STORAGE_KEY, sessionId)
     setHermesSessionId(sessionId)
     setMessages(formalMessages)
+    setGazeTranscript('')
     setInput('')
     setToolTimeline([])
     setApprovalRequest(null)
@@ -898,10 +1133,35 @@ export default function App() {
     setSessionHistoryOpen(false)
   }
 
-  /** 現在のHermes履歴を終了済みにしてから、ブラウザを空の新規会話へ切り替えます。 */
+  const newSessionDisabled = isNewSessionDisabled({
+    hermesSessionId,
+    gazeTranscript,
+    speaking: avatarState === 'speaking',
+    isBusy,
+    sessionResetting,
+    sessionSwitching,
+    sessionHistoryOpen,
+    agentResourcesOpen,
+    settingsOpen,
+  })
+
+  /** 現在のHermes履歴、または視線だけのログを終えて、ブラウザを空の新規会話へ切り替えます。 */
   const startNewSession = async () => {
+    if (newSessionDisabled) return
     const sessionId = hermesSessionId
-    if (!sessionId || isBusy || sessionResetting || sessionSwitching) return
+    if (!sessionId) {
+      if (!window.confirm('表示中の視線の会話を消して、新しいセッションを始めますか？')) return
+      gazeStopRef.current?.()
+      setGazeTranscript('')
+      setInput('')
+      setAvatarState('idle')
+      setAvatarExpression('neutral')
+      expressionOwnerRef.current = null
+      automaticMotionRef.current = null
+      setAnalyser(null)
+      setMotionCommand((current) => ({ id: (current?.id ?? 0) + 1, action: 'stop' }))
+      return
+    }
     if (!window.confirm('現在の会話を終了して、新しいセッションを始めますか？\n\n会話履歴はHermes側に保存されます。')) return
 
     setSessionResetting(true)
@@ -917,6 +1177,7 @@ export default function App() {
       clearActiveRun()
       setHermesSessionId(null)
       setMessages([])
+      setGazeTranscript('')
       setInput('')
       setToolTimeline([])
       setApprovalRequest(null)
@@ -1283,7 +1544,7 @@ export default function App() {
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, toolTimeline, approvalRequest?.id, approvalRequest?.status, recoveryNotice, error])
+  }, [messages, gazeTranscript, toolTimeline, approvalRequest?.id, approvalRequest?.status, recoveryNotice, error])
 
   useLayoutEffect(() => {
     // 会話モードや別パネルから標準画面へ戻った際、再生成された会話欄を末尾から表示します。
@@ -1376,6 +1637,16 @@ export default function App() {
     const text = rawText.trim()
     if (!text || isBusy || activeSessionRef.current) return
 
+    conversationActiveRef.current = true
+    gazeStopRef.current?.()
+    // 視線発話の同期が有効なら、書き起こしをメッセージへ付与して送信する
+    let messageToSend = displayedUserText
+    if (gazeSettings.gazeMessageSync && gazeTranscript.trim()) {
+      const prefix = `[avatar_gateway_message]\n[別セッションでassistantが発したメッセージ]\n${gazeTranscript.trim()}\n[/avatar_gateway_message]\n`
+      messageToSend = prefix + displayedUserText
+    }
+    setGazeTranscript('')
+
     // 通常送信ではこの場で、ふれあいでは先行タップ時に同じContextを有効化済みです。
     const audioContext = activateAudioContext()
 
@@ -1406,7 +1677,11 @@ export default function App() {
       setConversationActive(false)
     }
 
-    const history: Message[] = [...messages, { role: 'user', content: displayedUserText }]
+    const history: Message[] = [...messages]
+    if (gazeTranscript.trim()) {
+      history.push({ role: 'assistant', content: gazeTranscript.trim() })
+    }
+    history.push({ role: 'user', content: displayedUserText })
     setMessages([...history, { role: 'assistant', content: '' }])
     if (clearComposer) setInput('')
     setError('')
@@ -1425,6 +1700,98 @@ export default function App() {
     let playbackTail = Promise.resolve()
     let activeHermesSessionId = hermesSessionId
     let keepRunForReload = false
+    const pcmPlayback = new Map<string, PcmPlayback>()
+
+    /** 再生開始時の表情とモーションを、WAV再生とPCM再生で揃えます。 */
+    const showSpeechStarted = (request: SpeechRequest) => {
+      if (!isCurrentSession()) return
+      setAvatarState('speaking')
+      setConversationActivityPhase('speaking')
+      expressionOwnerRef.current = request.utteranceId
+      setAvatarExpression(request.expression)
+      automaticMotionRef.current = request.motion?.url ?? null
+      setMotionCommand((current) => request.motion
+        ? {
+            id: (current?.id ?? 0) + 1,
+            action: 'play',
+            name: request.motion.label,
+            url: request.motion.url,
+            playback: request.motion.playback,
+            exitDurationSeconds: request.motion.exitDurationSeconds,
+          }
+        : { id: (current?.id ?? 0) + 1, action: 'stop' })
+    }
+
+    const showSpeechSettled = (request: SpeechRequest) => {
+      session.pendingSpeech.delete(request.utteranceId)
+      if (isCurrentSession() && expressionOwnerRef.current === request.utteranceId) {
+        expressionOwnerRef.current = null
+        setAvatarExpression('neutral')
+      }
+    }
+
+    /** SSEの最初の音声情報で再生器を作り、後から届くPCMをそこへ流します。 */
+    const beginPcmSpeech = (data: Record<string, unknown>) => {
+      const utteranceId = typeof data.utterance_id === 'string' ? data.utterance_id : ''
+      const sampleRate = typeof data.sample_rate === 'number' ? data.sample_rate : 0
+      if (!utteranceId || sampleRate < 8_000 || sampleRate > 96_000) {
+        speechFailed = true
+        setError('音声チャンクの情報が不足しています。テキスト応答は利用できます。')
+        return
+      }
+      const request: SpeechRequest = {
+        audioUrl: '',
+        utteranceId,
+        sequenceId: typeof data.sequence_id === 'string' ? data.sequence_id : null,
+        segmentIndex: typeof data.segment_index === 'number' ? data.segment_index : null,
+        motion: readSpeechMotion(data, configuredMotions),
+        expression: readSpeechExpression(data),
+      }
+      if (session.speechStopped) {
+        void notifySpeech('speech.cancelled', request, { reason: '利用者が読み上げを停止しました' })
+        return
+      }
+      if (!isCurrentSession()) {
+        void notifySpeech('speech.cancelled', request, { reason: '利用者が会話を中断しました' })
+        return
+      }
+      const playback = createPcmPlayback(
+        request,
+        sampleRate,
+        audioContext,
+        session,
+        uiSettings.speech_volume,
+        (value) => {
+          if (isCurrentSession()) setAnalyser(value)
+        },
+        () => showSpeechStarted(request),
+        () => {
+          pcmPlayback.delete(utteranceId)
+          showSpeechSettled(request)
+        },
+      )
+      pcmPlayback.set(utteranceId, playback)
+      session.pendingSpeech.set(utteranceId, request)
+      playbackTail = playbackTail.then(async () => {
+        if (!isCurrentSession() || session.speechStopped) {
+          playback.close()
+          return
+        }
+        try {
+          const result = await playback.play()
+          if (result.status !== 'failed' || !isCurrentSession() || !result.error) return
+          speechFailed = true
+          setError(`${result.error} テキスト応答は利用できます。`)
+        } catch (cause) {
+          session.pendingSpeech.delete(utteranceId)
+          if (!isCurrentSession()) return
+          const reason = cause instanceof Error ? cause.message : '音声を再生できませんでした。'
+          speechFailed = true
+          void notifySpeech('speech.failed', request, { reason })
+          setError(`${reason} テキスト応答は利用できます。`)
+        }
+      })
+    }
 
     /** WAVの準備は即開始し、実再生だけを直前の文へ連結して順序を保ちます。 */
     const enqueueSpeech = (data: Record<string, unknown>) => {
@@ -1467,32 +1834,8 @@ export default function App() {
             (value) => {
               if (isCurrentSession()) setAnalyser(value)
             },
-            () => {
-              if (!isCurrentSession()) return
-              // 合成完了時ではなく実際の再生開始時に、その発話タスク固有のVRMAへ切り替えます。
-              setAvatarState('speaking')
-              setConversationActivityPhase('speaking')
-              expressionOwnerRef.current = request.utteranceId
-              setAvatarExpression(request.expression)
-              automaticMotionRef.current = request.motion?.url ?? null
-              setMotionCommand((current) => request.motion
-                ? {
-                    id: (current?.id ?? 0) + 1,
-                    action: 'play',
-                    name: request.motion.label,
-                    url: request.motion.url,
-                    playback: request.motion.playback,
-                    exitDurationSeconds: request.motion.exitDurationSeconds,
-                  }
-                : { id: (current?.id ?? 0) + 1, action: 'stop' })
-            },
-            () => {
-              session.pendingSpeech.delete(request.utteranceId)
-              if (isCurrentSession() && expressionOwnerRef.current === request.utteranceId) {
-                expressionOwnerRef.current = null
-                setAvatarExpression('neutral')
-              }
-            },
+            () => showSpeechStarted(request),
+            () => showSpeechSettled(request),
           )
           if (result.status !== 'failed' || !isCurrentSession()) return
           speechFailed = true
@@ -1515,8 +1858,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         // 正式履歴はHermes SessionDBからバックエンドが取得するため、今回の入力だけを送ります。
         body: JSON.stringify({
-          input: text,
+          input: messageToSend,
           session_id: hermesSessionId ?? undefined,
+          approval_prompt: uiSettings.approval_prompt,
         }),
         signal: session.controller.signal,
       })
@@ -1567,7 +1911,27 @@ export default function App() {
           if (session.speechStopped) void cancelSpeechSequence(data.sequence_id)
         } else if (eventName === 'speech.requested') {
           enqueueSpeech(data)
+        } else if (eventName === 'speech.stream.started') {
+          beginPcmSpeech(data)
+        } else if (eventName === 'speech.audio.delta') {
+          const utteranceId = typeof data.utterance_id === 'string' ? data.utterance_id : ''
+          const audio = typeof data.audio === 'string' ? data.audio : ''
+          const playback = pcmPlayback.get(utteranceId)
+          if (playback && audio) {
+            try {
+              playback.push(decodeBase64Pcm(audio))
+            } catch {
+              playback.fail()
+              speechFailed = true
+              setError('音声ストリームを再生できませんでした。テキスト応答は利用できます。')
+            }
+          }
+        } else if (eventName === 'speech.stream.done') {
+          const utteranceId = typeof data.utterance_id === 'string' ? data.utterance_id : ''
+          pcmPlayback.get(utteranceId)?.close()
         } else if (eventName === 'speech.failed') {
+          const utteranceId = typeof data.utterance_id === 'string' ? data.utterance_id : ''
+          pcmPlayback.get(utteranceId)?.fail()
           // 手動停止後に完了した合成は意図した破棄なので、音声エラーとして表示しません。
           if (!session.speechStopped) {
             speechFailed = true
@@ -1655,6 +2019,22 @@ export default function App() {
     })
   }
 
+  /** 視線発話の口パクだけを反映し、会話が始まっているときは状態を上書きしません。 */
+  const handleGazeAudio = (gazeAnalyser: AnalyserNode | null) => {
+    if (conversationActiveRef.current && gazeAnalyser) return
+    setAnalyser(gazeAnalyser)
+    if (conversationActiveRef.current) return
+    setAvatarState(gazeAnalyser ? 'speaking' : 'idle')
+  }
+
+  const updateGazeSettings = (next: typeof gazeSettings | ((current: typeof gazeSettings) => typeof gazeSettings)) => {
+    setGazeSettings((current) => {
+      const resolved = typeof next === 'function' ? next(current) : next
+      writeGazeSettings(localStorage, resolved)
+      return resolved
+    })
+  }
+
   return (
     <main className={`app-shell ${displayMode === 'conversation' ? 'conversation-mode' : 'standard-mode'}`}>
       <section className="avatar-panel">
@@ -1662,7 +2042,13 @@ export default function App() {
           <div className="brand-info">
             <span className="eyebrow">AVATAR GATEWAY</span>
             <span className="brand-runtime">
-              {health ? `${health.model} · ${health.tts_enabled ? 'Style-Bert-VITS2' : '音声OFF'}` : '接続確認中…'}
+              {health
+                ? `${health.model} · ${
+                    health.tts_enabled
+                      ? ttsProviderLabels[health.tts_provider] ?? health.tts_provider
+                      : '音声OFF'
+                  }`
+                : '接続確認中…'}
             </span>
           </div>
           <span className={`status status-${avatarState}`}>
@@ -1681,6 +2067,7 @@ export default function App() {
           vrmModelKey={activeVrmModelKey}
           avatarState={avatarState}
           avatarExpression={avatarExpression}
+          suppressBlinkDuringExpression={health?.suppress_blink_during_expression ?? false}
           analyser={analyser}
           motionCommand={motionCommand}
           showCameraHelp={displayMode === 'standard' && uiSettings.show_camera_help}
@@ -1700,6 +2087,7 @@ export default function App() {
             current?.id === id ? null : current
           ))}
           onCameraChange={setCurrentCamera}
+          faceFollowRef={faceFollowRef}
           onTouchHitboxProfileChange={handleTouchHitboxProfileChange}
           onVrmTouchDetected={activateAudioContext}
           onVrmTouch={handleVrmTouch}
@@ -1775,6 +2163,7 @@ export default function App() {
         {health && !health.vrm_available && <p className="notice">VRMが見つかりません。同梱・ローカルのVRMとAVATAR_VRM_FILEを確認してください。</p>}
         {health?.motion_catalog_error && <p className="notice">モーション設定エラー: {health.motion_catalog_error}</p>}
         {missingMotions.length > 0 && <p className="notice">VRMAが見つかりません: {missingMotions.map((motion) => motion.file).join('、')}</p>}
+        {gazeSettings.enabled && <p className="gaze-live-status" role="status">{gazeStatus}</p>}
       </section>
 
       <section className="chat-panel">
@@ -1819,6 +2208,10 @@ export default function App() {
             >
               <SessionActionIcon name="features" />
             </button>
+            <ModelSelectMenu
+              sessionId={hermesSessionId}
+              disabled={isBusy || sessionResetting || sessionSwitching}
+            />
             <button
               type="button"
               className="settings-button"
@@ -1838,7 +2231,7 @@ export default function App() {
               type="button"
               className="new-session-button"
               onClick={() => void startNewSession()}
-              disabled={!hermesSessionId || isBusy || sessionResetting || sessionSwitching || sessionHistoryOpen || agentResourcesOpen || settingsOpen}
+              disabled={newSessionDisabled}
               aria-label={newSessionActionLabel}
               title={newSessionActionLabel}
             >
@@ -1849,7 +2242,7 @@ export default function App() {
         {displayMode === 'conversation' ? (
           <div className="conversation-mode-content">
             <ConversationActivityOverlay phase={conversationActivityPhase} tools={toolTimeline} />
-            <ConversationModeOverlay messages={messages} avatarState={avatarState} />
+            <ConversationModeOverlay messages={messages} avatarState={avatarState} gazeText={gazeTranscript} />
             {recoveryNotice && <p className="recovery-message" role="status">{recoveryNotice}</p>}
             <ApprovalPanel request={approvalRequest} onRespond={respondToApproval} />
             {error && <p className="error-message">{error}</p>}
@@ -1864,26 +2257,44 @@ export default function App() {
         ) : agentResourcesOpen ? (
           <AgentResourcesPanel />
         ) : settingsOpen ? (
-          <SettingsPanel
-            settings={uiSettings}
-            currentCamera={currentCamera}
-            savingDefaults={settingsSaving}
-            message={settingsMessage}
-            error={settingsError}
-            backgrounds={backgroundAssets}
-            backgroundsLoading={backgroundsLoading}
-            backgroundsError={backgroundsError}
-            onChange={changeUiSettings}
-            onReloadBackgrounds={() => void loadBackgrounds()}
-            onResetBrowser={resetBrowserUiSettings}
-            onSaveDefaults={() => void saveServerUiDefaults()}
-          />
+                  <SettingsPanel
+                    settings={uiSettings}
+                    currentCamera={currentCamera}
+                    savingDefaults={settingsSaving}
+                    message={settingsMessage}
+                    error={settingsError}
+                    backgrounds={backgroundAssets}
+                    backgroundsLoading={backgroundsLoading}
+                    backgroundsError={backgroundsError}
+                    onChange={changeUiSettings}
+                    onReloadBackgrounds={() => void loadBackgrounds()}
+                    onResetBrowser={resetBrowserUiSettings}
+                    onSaveDefaults={() => void saveServerUiDefaults()}
+                    gazeEnabled={gazeSettings.enabled}
+                    gazeEnrolled={gazeSettings.enrollment !== null}
+                    gazeStatus={gazeStatus}
+                    gazePending={gazePending}
+                    gazeJobFound={gazeJobFound}
+                    onGazeEnabled={(enabled) => updateGazeSettings({ ...gazeSettings, enabled })}
+                    faceFollow={gazeSettings.faceFollow}
+                    faceFollowStatus={faceFollowStatus}
+                    detectEase={gazeSettings.detectEase}
+                    gazeMessageSync={gazeSettings.gazeMessageSync}
+                    onFaceFollow={(enabled) => {
+                      if (!enabled) faceFollowRef.current = null
+                      updateGazeSettings({ ...gazeSettings, faceFollow: enabled })}
+                    }
+                    onDetectEase={(enabled) => updateGazeSettings({ ...gazeSettings, detectEase: enabled })}
+                    onGazeMessageSync={(enabled) => updateGazeSettings({ ...gazeSettings, gazeMessageSync: enabled })}
+                    onGazeEnroll={() => setGazeEnrolling(true)}
+                    onGazeClear={() => updateGazeSettings({ ...gazeSettings, enrollment: null })}
+                  />
         ) : (
           <div className="conversation-scroll" ref={logRef}>
             <div className="messages" aria-live="polite">
-              {messages.length === 0 && <div className="welcome"><h2>こんにちは</h2><p>下の欄からHermesへ話しかけてください。</p></div>}
-              {messages.map((message, index) => (
-                <article className={`message ${message.role}`} key={`${message.role}-${index}`}>
+              {messages.length === 0 && !gazeTranscript.trim() && <div className="welcome"><h2>こんにちは</h2><p>下の欄からHermesへ話しかけてください。</p></div>}
+              {splitGatewayMessages(messages).map((message) => (
+                <article className={`message ${message.role}`} key={message.key}>
                   <span>{message.role === 'user' ? 'あなた' : 'Hermes'}</span>
                   {message.role === 'assistant' ? (
                     <MarkdownMessage content={message.content} />
@@ -1892,6 +2303,12 @@ export default function App() {
                   )}
                 </article>
               ))}
+              {gazeTranscript.trim() && (
+                <article className="message assistant">
+                  <span>Hermes</span>
+                  <MarkdownMessage content={gazeTranscript} />
+                </article>
+              )}
             </div>
             {recoveryNotice && <p className="recovery-message" role="status">{recoveryNotice}</p>}
             <ToolTimeline runState={agentRunState} items={toolTimeline} />
@@ -1954,6 +2371,58 @@ export default function App() {
             </div>
           </form>
         )}
+        <GazeSpeechMonitor
+          enabled={gazeSettings.enabled}
+          faceFollow={gazeSettings.faceFollow}
+          detectEase={gazeSettings.detectEase}
+          enrollment={gazeSettings.enrollment}
+          enrolling={gazeEnrolling}
+          blocked={conversationActive}
+          ttsEnabled={health?.tts_enabled === true}
+          motions={configuredMotions}
+          volume={uiSettings.speech_volume}
+          stopRef={gazeStopRef}
+          onEnrolled={(enrollment) => {
+            updateGazeSettings((current) => ({ ...current, enabled: true, enrollment }))
+            setGazeStatus('顔を登録しました')
+          }}
+          onEnrollClose={() => setGazeEnrolling(false)}
+          onStatus={setGazeStatus}
+          onFaceAngles={(angles) => {
+            faceFollowRef.current = angles
+          }}
+          onFaceFollowStatus={setFaceFollowStatus}
+          onAudio={handleGazeAudio}
+          onSpoken={() => setGazeRefresh((current) => current + 1)}
+          onBeat={(data) => {
+            if (conversationActiveRef.current) return
+            if (!data) {
+              setAvatarExpression('neutral')
+              automaticMotionRef.current = null
+              setMotionCommand((current) => ({ id: (current?.id ?? 0) + 1, action: 'stop' }))
+              return
+            }
+            const spoken = typeof data.text === 'string' ? data.text : ''
+            const beatIndex = typeof data.beatIndex === 'number' ? data.beatIndex : 0
+            if (spoken.trim()) {
+              setGazeTranscript((current) => appendGazeTranscript(current, spoken, beatIndex))
+            }
+            const motion = readSpeechMotion(data, configuredMotions)
+            setAvatarExpression(readSpeechExpression(data))
+            automaticMotionRef.current = motion?.url ?? null
+            setMotionCommand((current) => motion
+              ? {
+                  id: (current?.id ?? 0) + 1,
+                  action: 'play',
+                  name: motion.label,
+                  url: motion.url,
+                  playback: motion.playback,
+                  exitDurationSeconds: motion.exitDurationSeconds,
+                }
+              : { id: (current?.id ?? 0) + 1, action: 'stop' })
+          }}
+          getAudioContext={activateAudioContext}
+        />
       </section>
     </main>
   )

@@ -7,7 +7,20 @@ import threading
 from typing import Any
 
 from ..config import Settings
+from .speech_base import (
+    NoSpeechDetectedError,
+    TranscriptionError,
+    TranscriptionUnavailableError,
+)
 
+
+__all__ = [
+    "FasterWhisperTranscriber",
+    "NoSpeechDetectedError",
+    "TranscriptionError",
+    "TranscriptionUnavailableError",
+    "is_model_installed",
+]
 
 _REQUIRED_MODEL_FILES = frozenset({"config.json", "model.bin", "tokenizer.json"})
 
@@ -19,18 +32,6 @@ def is_model_installed(config: Settings) -> bool:
         (model_directory / file_name).is_file()
         for file_name in _REQUIRED_MODEL_FILES
     )
-
-
-class TranscriptionError(RuntimeError):
-    """音声デコードや推論の失敗を、内部情報を含まないAPIエラーへまとめます。"""
-
-
-class TranscriptionUnavailableError(TranscriptionError):
-    """依存関係やモデルを準備できず、音声認識を開始できない場合に使います。"""
-
-
-class NoSpeechDetectedError(TranscriptionError):
-    """正常に処理できたものの、送信できる発話本文が得られない場合に使います。"""
 
 
 class FasterWhisperTranscriber:

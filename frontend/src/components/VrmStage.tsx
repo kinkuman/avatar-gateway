@@ -7,6 +7,7 @@ import { TransformControls, type TransformControlsMode } from 'three/examples/js
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 
 import { defaultAvatarCamera, defaultAvatarMotion } from '../config/avatar'
+import type { FaceFollowAngles } from '../lib/faceFollow'
 import type {
   AvatarExpression,
   AvatarState,
@@ -33,6 +34,7 @@ interface Props {
   vrmModelKey: string | null
   avatarState: AvatarState
   avatarExpression: AvatarExpression
+  suppressBlinkDuringExpression: boolean
   analyser: AnalyserNode | null
   motionCommand: MotionCommand | null
   showCameraHelp: boolean
@@ -53,6 +55,7 @@ interface Props {
   onTouchHitboxProfileChange: (modelKey: string, profile: UiTouchHitboxProfile) => void
   onVrmTouchDetected: () => void
   onVrmTouch: (input: VrmTouchInput) => void
+  faceFollowRef: { current: FaceFollowAngles | null }
 }
 
 interface HitboxEditorPosition {
@@ -110,6 +113,7 @@ export default function VrmStage({
   vrmModelKey,
   avatarState,
   avatarExpression,
+  suppressBlinkDuringExpression,
   analyser,
   motionCommand,
   showCameraHelp,
@@ -130,12 +134,14 @@ export default function VrmStage({
   onTouchHitboxProfileChange,
   onVrmTouchDetected,
   onVrmTouch,
+  faceFollowRef,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const hitboxEditorRef = useRef<HTMLDivElement>(null)
   const hitboxEditorDragRef = useRef<{ pointerId: number, offsetX: number, offsetY: number } | null>(null)
   const stateRef = useRef(avatarState)
   const expressionRef = useRef(avatarExpression)
+  const suppressBlinkDuringExpressionRef = useRef(suppressBlinkDuringExpression)
   const analyserRef = useRef(analyser)
   const playerRef = useRef<VrmaPlayer | null>(null)
   const statusCallbackRef = useRef(onMotionStatus)
@@ -238,8 +244,9 @@ export default function VrmStage({
   useEffect(() => {
     stateRef.current = avatarState
     expressionRef.current = avatarExpression
+    suppressBlinkDuringExpressionRef.current = suppressBlinkDuringExpression
     analyserRef.current = analyser
-  }, [avatarState, avatarExpression, analyser])
+  }, [avatarState, avatarExpression, suppressBlinkDuringExpression, analyser])
 
   useEffect(() => {
     statusCallbackRef.current = onMotionStatus
@@ -820,6 +827,8 @@ export default function VrmStage({
         runtime.setPrimaryMotionKind(playerRef.current?.getMotionKind() ?? null)
         runtime.setStaticPrimaryPose(playerRef.current?.getStaticPose() ?? null)
         runtime.setInputs(stateRef.current, analyserRef.current, expressionRef.current)
+        runtime.setSuppressBlinkDuringExpression(suppressBlinkDuringExpressionRef.current)
+        runtime.setFaceFollow(faceFollowRef.current)
         runtime.update(delta, clock.elapsedTime)
       }
       castOffControllerRef.current?.update(delta)

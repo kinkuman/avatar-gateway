@@ -18,6 +18,7 @@ These projects are used directly as Python or frontend dependencies of Avatar Ga
 | [FastAPI](https://github.com/fastapi/fastapi) | Backend API / バックエンドAPI | MIT |
 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | Optional speech recognition / 任意の音声認識 | MIT |
 | [noisejs](https://github.com/josephg/noisejs) | Perlin noise for idle motion and blink timing / 待機動作と瞬き頻度のPerlinノイズ | [ISC](third_party_licenses/noisejs-ISC.txt) |
+| [@vladmandic/face-api](https://github.com/vladmandic/face-api) | Browser-side face enrollment and gaze trigger / ブラウザ内の顔登録と視線発話 | MIT |
 
 Avatar Gatewayの`PerlinNoise2D.ts`は、Joseph GentleによるnoisejsをTypeScript向けに整理したものです。noisejsはStefan Gustavsonによるpublic domain実装を基にしています。
 

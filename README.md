@@ -91,6 +91,8 @@ Hermesの`image_generate`を使う場合は、生成画像キャッシュの場�
 
 公開用設定例ではStyle-Bert-VITS2を無効にしています。読み上げを使う場合はStyle-Bert-VITS2を起動し、`.env`の`STYLEBERTVITS2_ENABLED=true`へ変更します。接続先や声は次の項目で設定します。
 
+読み上げにはStyle-Bert-VITS2とOpenAI互換APIのどちらかを使えます。`AVATAR_GATEWAY_TTS_PROVIDER`で切り替え、既定はこれまでどおりのStyle-Bert-VITS2です。
+
 ```env
 STYLEBERTVITS2_SERVER_URL=http://127.0.0.1:5000
 STYLEBERTVITS2_MODEL_ID=0
@@ -109,6 +111,25 @@ STYLEBERTVITS2_CHUNK_MAX_CHARS=100
 STYLEBERTVITS2_ENABLED=false
 ```
 但し、音声合成がない場合、`このアプリの良さが半減してしまう`ため、導入をおすすめします。
+
+#### OpenAI互換APIを読み上げに使う（任意）
+
+Style-Bert-VITS2のかわりに、[speech.cpp](https://github.com/nyosegawa/speech.cpp)の`speech serve`や本家OpenAIの`POST /v1/audio/speech`を使えます。提供元を`openai`へ変え、接続先と声を設定します。
+
+```env
+STYLEBERTVITS2_ENABLED=true
+AVATAR_GATEWAY_TTS_PROVIDER=openai
+OPENAI_TTS_BASE_URL=http://127.0.0.1:8080/
+OPENAI_TTS_API_KEY=
+OPENAI_TTS_MODEL=
+OPENAI_TTS_VOICE=none
+```
+
+`OPENAI_TTS_BASE_URL`には`/v1`を含めても含めなくても構いません。本家OpenAIを使う場合は`https://api.openai.com/v1`とAPIキーを指定します。
+
+`OPENAI_TTS_VOICE`は既定で`none`です。`none`または空の間は`voice`を送らないため、speech.cppのように`voice`が必須なサーバーでは、`ono_anna`など実際の声名へ変更してください。利用できる声は`GET /v1/models`で確認できます。
+
+`OPENAI_TTS_MODEL`が空なら、サーバーが保持している合成モデルをそのまま使います。`OPENAI_TTS_SPEED`、`OPENAI_TTS_INSTRUCTIONS`、`OPENAI_TTS_LANGUAGE`は空なら送信しません。speech.cppは受け付けない項目を無視せずエラーにするため、モデルが対応するものだけ設定してください。
 
 #### はむ子用音声
 
@@ -156,6 +177,24 @@ FASTER_WHISPER_LOCAL_FILES_ONLY=true
 音声入力を有効にしても、通常起動中にモデルを自動取得しません。依存関係をインストールした後、後述(4.バックエンドの起動)の明示コマンドで`small`モデルを`local-assets/whisper/`へ取得してください。モデルがない場合はマイクだけを無効化し、テキスト会話と読み上げは継続します。認識速度や精度を比較する場合は、導入前に`FASTER_WHISPER_MODEL`で別のモデルを明示できます。
 
 音声入力を使わない環境では`FASTER_WHISPER_ENABLED=false`にします。この場合もテキスト入力と読み上げは従来どおり利用できます。
+
+#### OpenAI互換APIを音声認識に使う（任意）
+
+ローカルfaster-whisperのかわりに、[speech.cpp](https://github.com/nyosegawa/speech.cpp)や本家OpenAIの`POST /v1/audio/transcriptions`を使えます。`AVATAR_GATEWAY_STT_PROVIDER=openai`にすると、Whisperモデルの導入コマンドは不要です。
+
+```env
+FASTER_WHISPER_ENABLED=true
+AVATAR_GATEWAY_STT_PROVIDER=openai
+OPENAI_STT_BASE_URL=http://127.0.0.1:8080/
+OPENAI_STT_API_KEY=
+OPENAI_STT_MODEL=
+OPENAI_STT_LANGUAGE=ja
+OPENAI_STT_RESPONSE_FORMAT=json
+```
+
+speech.cppはWAVしか受け取らないため、ブラウザがWebMやMP4で録音した音声は、送信前に16kHzモノラルのWAVへ変換します。変換には`faster-whisper`が同梱する`av`を使うため、追加の導入は必要ありません。
+
+`OPENAI_STT_RESPONSE_FORMAT`に`verbose_json`を指定すると、サーバーが返す言語と長さも受け取ります。固有名詞を認識させたい場合は`OPENAI_STT_PROMPT`へ書きます（対応モデルのみ）。
 
 ## 2. VRMを変更する（任意）
 

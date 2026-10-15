@@ -11,6 +11,7 @@ import httpx
 
 from ..config import Settings
 from .daily_state import present_daily_input
+from .model_selection import ModelSelectionError, ModelSelectionStore, SelectedHermesModel
 REQUIRED_AGENT_FEATURES = (
     "run_submission",
     "run_status",
@@ -350,11 +351,13 @@ class HermesClient:
         body: Mapping[str, Any] | None = None,
         not_found_message: str | None = None,
         conflict_message: str | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """HermesのJSON APIに共通する認証、短いタイムアウト、応答検証を適用します。"""
+        request_timeout = httpx.Timeout(10 if timeout is None else timeout, connect=2)
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(10, connect=2),
+                timeout=request_timeout,
                 transport=self._transport,
             ) as client:
                 response = await client.request(
@@ -435,7 +438,7 @@ class HermesClient:
         session_id = f"{AVATAR_SESSION_ID_PREFIX}{uuid4().hex}"
         body: dict[str, Any] = {
             "id": session_id,
-            "model": self._config.hermes_model,
+            "model": self._run_model(),
         }
         if title is not None:
             body["title"] = title
@@ -566,6 +569,40 @@ class HermesClient:
             raise HermesError("Hermes Toolset一覧の応答形式が正しくありません")
         return tuple(HermesToolset.from_response(item) for item in raw_items)
 
+    def _saved_model(self) -> SelectedHermesModel | None:
+        """画面で保存したモデルがあれば、環境変数の既定より優先します。"""
+        try:
+            return ModelSelectionStore(self._config.hermes_model_file).load()
+        except ModelSelectionError as exc:
+            raise HermesError(str(exc)) from exc
+
+    def _run_model(self) -> str:
+        """選択がなければ、起動時のHERMES_MODELをそのまま使います。"""
+        selected = self._saved_model()
+        return selected.model if selected else self._config.hermes_model
+
+    async def list_model_options(self) -> dict[str, Any]:
+        """Hermesのモデルピッカーと同じ一覧を、認証情報を解釈せずに受け取ります。"""
+        return await self._request_json(
+            "GET",
+            "/api/model/options",
+            operation="モデル一覧API",
+            params={"include_unconfigured": "false"},
+            timeout=25,
+        )
+
+    async def lock_session_model(self, session_id: str, model: str, provider: str) -> None:
+        """進行中のセッションにも、選んだモデルをHermes側で固定します。"""
+        self._require_owned_session_id(session_id)
+        await self._request_json(
+            "POST",
+            f"/api/sessions/{session_id}/model",
+            operation="モデル固定API",
+            body={"model": model, "provider": provider, "require_model_lock": True},
+            not_found_message="Avatar Gatewayのセッションが見つかりません",
+            conflict_message="このセッションでは指定したモデルを固定できません",
+        )
+
     async def start_run(
         self,
         session_id: str,
@@ -575,12 +612,15 @@ class HermesClient:
     ) -> dict[str, Any]:
         """所有セッションと明示的な履歴を渡し、Hermes Runを非同期で開始します。"""
         self._require_owned_session_id(session_id)
+        selected = self._saved_model()
         body: dict[str, Any] = {
             "input": user_input,
             "session_id": session_id,
-            "model": self._config.hermes_model,
+            "model": selected.model if selected else self._config.hermes_model,
             "conversation_history": conversation_history,
         }
+        if selected is not None:
+            body["provider"] = selected.provider
         if instructions:
             body["instructions"] = instructions
         payload = await self._request_json(

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
+import { splitGatewayMessages } from '../lib/gatewayMessage'
 import { readSessionMessages, readSessionPage } from '../lib/session'
 import type { HermesSessionSummary, Message } from '../types'
 import MarkdownMessage from './MarkdownMessage'
@@ -323,8 +324,8 @@ export default function SessionHistoryPanel({
               {!historyLoading && !historyError && messages.length === 0 && (
                 <p className="session-placeholder">表示できる会話はありません。</p>
               )}
-              {messages.map((message, index) => (
-                <article className={`message ${message.role}`} key={`${message.role}-${index}`}>
+              {splitGatewayMessages(messages).map((message) => (
+                <article className={`message ${message.role}`} key={message.key}>
                   <span>{message.role === 'user' ? 'あなた' : 'Hermes'}</span>
                   {message.role === 'assistant' ? (
                     <MarkdownMessage content={message.content} />

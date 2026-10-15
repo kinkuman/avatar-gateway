@@ -5,6 +5,7 @@ export type SessionActionIconName =
   | 'standard'
   | 'history'
   | 'features'
+  | 'model'
   | 'settings'
   | 'new-session'
 
@@ -58,6 +59,14 @@ export default function SessionActionIcon({ name }: Props) {
         <rect x="14" y="3.5" width="6.5" height="6.5" rx="1.3" />
         <rect x="3.5" y="14" width="6.5" height="6.5" rx="1.3" />
         <rect x="14" y="14" width="6.5" height="6.5" rx="1.3" />
+      </svg>
+    )
+  }
+  if (name === 'model') {
+    return (
+      <svg {...common}>
+        <rect x="7" y="7" width="10" height="10" rx="2" />
+        <path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3" />
       </svg>
     )
   }

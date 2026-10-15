@@ -45,8 +45,10 @@ export interface Health {
   model: string
   hermes: HermesHealth
   tts_enabled: boolean
+  tts_provider: string
   stt: {
     enabled: boolean
+    provider: string
     available: boolean
     model: string
     device: string
@@ -55,6 +57,7 @@ export interface Health {
   }
   vrm_available: boolean
   vrm_url: string | null
+  suppress_blink_during_expression: boolean
   motions: MotionCatalogItem[]
   generating_motion: string | null
   motion_catalog_error: string | null
@@ -195,6 +198,7 @@ export interface UiSettings {
   show_motion_controls: boolean
   show_camera_help: boolean
   speech_volume: number
+  approval_prompt: string
   camera: UiCameraSettings | null
   background: UiBackgroundSettings
   touch_interaction: UiTouchInteractionSettings

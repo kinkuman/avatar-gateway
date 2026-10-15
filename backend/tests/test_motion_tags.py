@@ -181,7 +181,7 @@ async def test_conversation_sends_only_clean_text_to_browser_and_tts(
     monkeypatch.setattr(main_module, "_stream_agent_run", fake_stream_agent_run)
     monkeypatch.setattr(main_module, "synthesize", fake_synthesize)
     monkeypatch.setattr(main_module, "_load_motion_catalog", lambda: TEST_CATALOG)
-    monkeypatch.setattr(main_module, "settings", replace(main_module.settings, tts_enabled=True))
+    monkeypatch.setattr(main_module, "settings", replace(main_module.settings, tts_enabled=True, tts_provider="stylebertvits2"))
 
     response = await main_module.stream_hermes_conversation(
         HermesConversationRequest(input="結果は？"),

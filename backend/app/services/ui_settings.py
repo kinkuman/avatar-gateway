@@ -176,10 +176,19 @@ class UiSettings(BaseModel):
     show_motion_controls: bool = False
     show_camera_help: bool = True
     speech_volume: float = Field(default=1, ge=0, le=1)
+    approval_prompt: str = Field(default="承認をお願いします", max_length=80)
     camera: UiCameraSettings | None = None
     background: UiBackgroundSettings = Field(default_factory=UiBackgroundSettings)
     touch_interaction: UiTouchInteractionSettings = Field(default_factory=UiTouchInteractionSettings)
     voice_input: UiVoiceInputSettings = Field(default_factory=UiVoiceInputSettings)
+
+    @field_validator("approval_prompt")
+    @classmethod
+    def normalize_approval_prompt(cls, value: str) -> str:
+        """設定画面の読み上げ文を一文へ整え、空文字は読み上げなしとして保存します。"""
+        from app.models import _normalize_approval_prompt
+
+        return _normalize_approval_prompt(value)
 
 
 def _background_files(directory: Path, url_prefix: str) -> dict[str, dict[str, str]]:
