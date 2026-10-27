@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app import main as main_module
+from app.models import HermesConversationRequest
 from app.services.ui_settings import UiSettings, UiSettingsError, UiSettingsStore, list_backgrounds
 
 
@@ -102,6 +103,55 @@ def test_touch_interaction_defaults_keep_existing_ui_files_compatible() -> None:
         for region, enabled in loaded.touch_interaction.regions.model_dump().items()
         if region not in {"ear", "tail"}
     )
+
+
+def test_missing_approval_prompt_uses_spoken_default() -> None:
+    """旧いui.jsonでも、承認ウィンドウの読み上げ文は既定のお願いを補います。"""
+    payload = _settings().model_dump(mode="json")
+    del payload["approval_prompt"]
+
+    loaded = UiSettings.model_validate(payload)
+
+    assert loaded.approval_prompt == "承認をお願いします"
+
+
+def test_approval_prompt_collapses_whitespace_and_rejects_control_characters() -> None:
+    """読み上げ文は一文に整え、制御文字だけは設定として受け付けません。"""
+    payload = _settings().model_dump(mode="json")
+    payload["approval_prompt"] = "  確認を  お願い  "
+    assert UiSettings.model_validate(payload).approval_prompt == "確認を お願い"
+
+    payload["approval_prompt"] = "承認\x00して"
+    with pytest.raises(ValidationError):
+        UiSettings.model_validate(payload)
+
+    payload["approval_prompt"] = "あ" * 81
+    with pytest.raises(ValidationError):
+        UiSettings.model_validate(payload)
+
+
+def test_approval_prompt_text_prefers_request_over_server_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ブラウザが送った文を使い、未指定のときだけui.jsonの既定値へ戻します。"""
+    path = tmp_path / "ui.json"
+    UiSettingsStore(path).save(_settings().model_copy(update={"approval_prompt": "サーバーのお願い"}))
+    monkeypatch.setattr(
+        main_module,
+        "settings",
+        replace(main_module.settings, ui_settings_file=path),
+    )
+
+    assert main_module._approval_prompt_text(
+        HermesConversationRequest(input="実行して", approval_prompt="ブラウザのお願い"),
+    ) == "ブラウザのお願い"
+    assert main_module._approval_prompt_text(
+        HermesConversationRequest(input="実行して", approval_prompt=""),
+    ) == ""
+    assert main_module._approval_prompt_text(
+        HermesConversationRequest(input="実行して"),
+    ) == "サーバーのお願い"
 
 
 def test_cast_off_defaults_to_disabled_for_existing_ui_files() -> None:

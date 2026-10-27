@@ -5,6 +5,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+def _normalize_approval_prompt(value: str) -> str:
+    """改行や余分な空白を除き、承認ウィンドウで読む一文だけを残します。"""
+    normalized = " ".join(value.split())
+    if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+        raise ValueError("approval prompt contains control characters")
+    return normalized
+
+
 class HermesConversationRequest(BaseModel):
     """Hermes Session/Runへ送る一回分の会話入力を検証します。"""
 
@@ -17,6 +25,7 @@ class HermesConversationRequest(BaseModel):
         max_length=47,
         pattern=r"^avatar_gateway_[0-9a-f]{32}$",
     )
+    approval_prompt: str | None = Field(default=None, max_length=80)
 
     @field_validator("input")
     @classmethod
@@ -26,6 +35,41 @@ class HermesConversationRequest(BaseModel):
         if not normalized:
             raise ValueError("input must not be blank")
         return normalized
+
+    @field_validator("approval_prompt")
+    @classmethod
+    def normalize_approval_prompt(cls, value: str | None) -> str | None:
+        """承認ウィンドウの読み上げ文を一文に整え、空文字は無音として残します。"""
+        if value is None:
+            return None
+        return _normalize_approval_prompt(value)
+
+
+class HermesModelSelectRequest(BaseModel):
+    """画面で選んだHermesモデル、または既定への復帰を受け取ります。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    use_default: bool = False
+    model: str | None = Field(default=None, max_length=200)
+    provider: str | None = Field(default=None, max_length=80)
+    session_id: str | None = Field(
+        default=None,
+        min_length=47,
+        max_length=47,
+        pattern=r"^avatar_gateway_[0-9a-f]{32}$",
+    )
+
+    @field_validator("model", "provider")
+    @classmethod
+    def reject_blank_identifier(cls, value: str | None) -> str | None:
+        """空白だけの識別子を、未指定とは別に拒否します。"""
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("identifier must not be blank")
+        return stripped
 
 
 class HermesSessionCreateRequest(BaseModel):

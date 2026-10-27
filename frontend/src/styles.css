@@ -95,12 +95,24 @@ button, textarea { font: inherit; }
 .chat-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100dvh; min-height: 0; overflow: hidden; background: #f8fafc; color: #172033; }
 .connection { display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 16px 28px; color: #64748b; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
 .session-actions { display: flex; flex: 0 0 auto; gap: 7px; }
-.new-session-button, .session-history-button, .agent-resources-button, .settings-button, .display-mode-button { display: inline-grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 1px solid #cbd5e1; border-radius: 9px; color: #334155; background: #fff; cursor: pointer; }
+.new-session-button, .session-history-button, .agent-resources-button, .model-select-button, .settings-button, .display-mode-button { display: inline-grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 1px solid #cbd5e1; border-radius: 9px; color: #334155; background: #fff; cursor: pointer; }
 .session-action-icon { display: block; width: 21px; height: 21px; }
-.new-session-button:hover, .session-history-button:hover, .agent-resources-button:hover, .settings-button:hover, .display-mode-button:hover { background: #f1f5f9; }
-.session-history-button[aria-expanded="true"], .agent-resources-button[aria-expanded="true"], .settings-button[aria-expanded="true"] { color: #0369a1; border-color: #7dd3fc; background: #e0f2fe; box-shadow: inset 0 0 0 1px #bae6fd; }
-.new-session-button:focus-visible, .session-history-button:focus-visible, .agent-resources-button:focus-visible, .settings-button:focus-visible, .display-mode-button:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
-.new-session-button:disabled, .session-history-button:disabled, .agent-resources-button:disabled, .settings-button:disabled { color: #94a3b8; background: #f8fafc; cursor: not-allowed; }
+.new-session-button:hover, .session-history-button:hover, .agent-resources-button:hover, .model-select-button:hover, .settings-button:hover, .display-mode-button:hover { background: #f1f5f9; }
+.session-history-button[aria-expanded="true"], .agent-resources-button[aria-expanded="true"], .model-select-button[aria-expanded="true"], .settings-button[aria-expanded="true"] { color: #0369a1; border-color: #7dd3fc; background: #e0f2fe; box-shadow: inset 0 0 0 1px #bae6fd; }
+.new-session-button:focus-visible, .session-history-button:focus-visible, .agent-resources-button:focus-visible, .model-select-button:focus-visible, .settings-button:focus-visible, .display-mode-button:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
+.new-session-button:disabled, .session-history-button:disabled, .agent-resources-button:disabled, .model-select-button:disabled, .settings-button:disabled { color: #94a3b8; background: #f8fafc; cursor: not-allowed; }
+.model-select { position: relative; z-index: 30; }
+.model-select-menu { position: absolute; top: calc(100% + 8px); right: 0; display: flex; flex-direction: column; gap: 8px; width: min(320px, 70vw); max-height: min(420px, 60dvh); padding: 10px; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; box-shadow: 0 16px 40px #0f172a33; }
+.model-select-search { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #0f172a; background: #fff; }
+.model-select-list { display: grid; gap: 4px; flex: 1 1 auto; min-height: 0; overflow: auto; }
+.model-select-list section { display: grid; gap: 4px; }
+.model-select-list h3 { margin: 8px 0 2px; color: #64748b; font-size: 11px; font-weight: 700; }
+.model-select-list button { padding: 7px 8px; border: 1px solid transparent; border-radius: 8px; color: #1e293b; background: transparent; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.model-select-list button:hover { background: #f1f5f9; }
+.model-select-list button.active { color: #0369a1; border-color: #7dd3fc; background: #e0f2fe; }
+.model-select-list button:disabled { color: #94a3b8; cursor: not-allowed; }
+.model-select-status, .model-select-error { margin: 0; color: #64748b; font-size: 12px; }
+.model-select-error { color: #b91c1c; }
 .conversation-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth; }
 .messages { padding: 28px 28px 6px; }
 .welcome { margin: 18vh auto 0; max-width: 320px; text-align: center; color: #64748b; }
@@ -267,8 +279,22 @@ button, textarea { font: inherit; }
 .settings-toggle + .settings-toggle { border-top: 1px solid #e2e8f0; }
 .settings-toggle input { margin-top: 3px; }
 .settings-toggle span { display: flex; flex-direction: column; gap: 3px; }
-.settings-toggle strong, .settings-range strong { color: #334155; font-size: 12px; }
-.settings-toggle small { color: #64748b; font-size: 10px; line-height: 1.45; }
+.settings-toggle strong, .settings-range strong, .settings-text strong { color: #334155; font-size: 12px; }
+.settings-toggle small, .settings-text small { color: #64748b; font-size: 10px; line-height: 1.45; }
+.settings-text { display: block; margin: 4px 0 12px; }
+.settings-text span { display: flex; flex-direction: column; gap: 3px; }
+.settings-text input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #1e293b;
+  font: inherit;
+}
+.gaze-setting-status { display: block; margin: 0 0 8px; color: #64748b; font-family: inherit; font-size: 10px; font-weight: 400; line-height: 1.45; }
+.gaze-setting-status span { display: block; }
 .touch-region-settings { margin: 8px 0 0; padding: 10px 0; border: 0; border-top: 1px solid #e2e8f0; color: #475569; }
 .touch-region-settings legend { padding: 10px 0 5px; font-size: 10px; font-weight: 700; }
 .touch-region-settings > div { display: flex; flex-wrap: wrap; gap: 8px 14px; }
@@ -285,6 +311,13 @@ button, textarea { font: inherit; }
 .settings-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-row-actions button { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: #fff; cursor: pointer; font-size: 11px; }
 .settings-row-actions button:hover { background: #f1f5f9; }
+.gaze-live-status { position: absolute; z-index: 4; left: 28px; bottom: 24px; margin: 0; padding: 8px 12px; border: 1px solid #ffffff26; border-radius: 999px; color: #e2e8f0; background: #0f172acc; font-size: 12px; }
+.gaze-camera-source { position: fixed; width: 320px; height: 240px; left: -4000px; top: 0; pointer-events: none; }
+.gaze-camera-preview { position: relative; z-index: 46; width: min(320px, calc(100vw - 48px)); height: 240px; object-fit: cover; border-radius: 12px; transform: scaleX(-1); background: #0f172a; }
+.gaze-enroll-overlay { position: fixed; z-index: 45; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; background: #020617cc; }
+.gaze-enroll-card { width: min(420px, 100%); padding: 22px; border: 1px solid #cbd5e1; border-radius: 16px; color: #1e293b; background: #fff; box-shadow: 0 20px 50px #0006; }
+.gaze-enroll-card h2 { margin: 0 0 8px; font-size: 18px; }
+.gaze-enroll-card p { margin: 0 0 14px; color: #475569; font-size: 13px; line-height: 1.6; }
 .settings-row-actions button.primary { color: #fff; border-color: #2563eb; background: #2563eb; }
 .settings-row-actions button.primary:hover { background: #1d4ed8; }
 .settings-row-actions button:disabled { color: #94a3b8; border-color: #cbd5e1; background: #f1f5f9; cursor: not-allowed; }
@@ -328,7 +361,7 @@ button, textarea { font: inherit; }
 .conversation-mode .chat-panel { position: absolute; z-index: 6; inset: 0; height: 100dvh; color: #e5e7eb; background: transparent; pointer-events: none; }
 .conversation-mode .connection { align-items: flex-start; padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 10px; border: 0; pointer-events: none; }
 .conversation-mode .session-actions { justify-content: flex-end; width: auto; pointer-events: auto; }
-.conversation-mode .session-history-button, .conversation-mode .agent-resources-button, .conversation-mode .settings-button, .conversation-mode .new-session-button { display: none; }
+.conversation-mode .session-history-button, .conversation-mode .agent-resources-button, .conversation-mode .settings-button, .conversation-mode .new-session-button, .conversation-mode .model-select { display: none; }
 .conversation-mode .display-mode-button { min-height: 44px; color: #e2e8f0; border-color: #ffffff38; background: #0f172acc; box-shadow: 0 8px 24px #0004; backdrop-filter: blur(10px); }
 .conversation-mode .display-mode-button:hover { background: #334155e8; }
 .conversation-mode-content { display: flex; min-height: 0; flex-direction: column; justify-content: flex-end; gap: 10px; padding: 76px max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left)); overflow: hidden; pointer-events: none; }

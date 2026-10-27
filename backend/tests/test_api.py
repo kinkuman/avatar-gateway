@@ -94,6 +94,12 @@ async def test_health_returns_runtime_capabilities(
             main_module.settings,
             hermes_api_key="test-secret",
             vrm_file="はむ子.vrm",
+            suppress_blink_during_expression=True,
+            tts_provider="stylebertvits2",
+            stt_provider="faster_whisper",
+            stt_model="small",
+            stt_device="cpu",
+            stt_compute_type="int8",
             stt_model_dir=tmp_path / "whisper",
             local_assets_dir=tmp_path / "local-assets",
         ),
@@ -102,8 +108,10 @@ async def test_health_returns_runtime_capabilities(
     assert response["status"] == "ok"
     assert response["hermes"]["status"] == "ready"
     assert response["hermes"]["capabilities"]["features"]["run_submission"] is True
+    assert response["tts_provider"] == "stylebertvits2"
     assert response["stt"] == {
         "enabled": True,
+        "provider": "faster_whisper",
         "available": False,
         "model": "small",
         "device": "cpu",
@@ -112,6 +120,14 @@ async def test_health_returns_runtime_capabilities(
     }
     assert response["vrm_available"] is True
     assert response["vrm_url"] == "/assets/vrm/はむ子.vrm"
+    assert response["suppress_blink_during_expression"] is True
+    monkeypatch.setattr(
+        main_module,
+        "settings",
+        replace(main_module.settings, suppress_blink_during_expression=False),
+    )
+    disabled = await health()
+    assert disabled["suppress_blink_during_expression"] is False
     assert response["generating_motion"] == "hands_behind_back"
     assert {motion["name"] for motion in response["motions"]} == {
         "nod",

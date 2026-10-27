@@ -4,6 +4,7 @@
   "show_motion_controls": false,
   "show_camera_help": true,
   "speech_volume": 1.0,
+  "approval_prompt": "承認をお願いします",
   "camera": null,
   "background": {
     "file": null,

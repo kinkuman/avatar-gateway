@@ -23,6 +23,7 @@ export const fallbackUiSettings: UiSettings = {
   show_motion_controls: false,
   show_camera_help: true,
   speech_volume: 1,
+  approval_prompt: '承認をお願いします',
   camera: null,
   background: { file: null, fit: 'cover' },
   touch_interaction: {
@@ -229,6 +230,17 @@ function readCamera(value: unknown): UiCameraSettings | null | undefined {
   return { position, target }
 }
 
+function readApprovalPrompt(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (normalized.length > 80) return undefined
+  if ([...normalized].some((character) => {
+    const code = character.charCodeAt(0)
+    return code < 32 || code === 127
+  })) return undefined
+  return normalized
+}
+
 /** サーバー応答を全項目必須のUI既定値として検証します。 */
 export function readUiSettings(value: unknown): UiSettings | null {
   if (!value || typeof value !== 'object') return null
@@ -237,6 +249,9 @@ export function readUiSettings(value: unknown): UiSettings | null {
   const background = readBackground(item.background)
   const touchInteraction = readTouchInteraction(item.touch_interaction)
   const voiceInput = readVoiceInput(item.voice_input)
+  const approvalPrompt = item.approval_prompt === undefined
+    ? fallbackUiSettings.approval_prompt
+    : readApprovalPrompt(item.approval_prompt)
   if (
     item.schema_version !== 1
     || (item.cast_off_enabled !== undefined && typeof item.cast_off_enabled !== 'boolean')
@@ -246,6 +261,7 @@ export function readUiSettings(value: unknown): UiSettings | null {
     || !Number.isFinite(item.speech_volume)
     || item.speech_volume < 0
     || item.speech_volume > 1
+    || approvalPrompt === undefined
     || camera === undefined
     || background === undefined
     || touchInteraction === undefined
@@ -258,6 +274,7 @@ export function readUiSettings(value: unknown): UiSettings | null {
     show_motion_controls: item.show_motion_controls,
     show_camera_help: item.show_camera_help,
     speech_volume: item.speech_volume,
+    approval_prompt: approvalPrompt,
     camera,
     background,
     touch_interaction: touchInteraction,
@@ -282,6 +299,8 @@ export function readUiSettingsOverrides(storage: Storage): UiSettingsOverrides {
       && item.speech_volume >= 0
       && item.speech_volume <= 1
     ) overrides.speech_volume = item.speech_volume
+    const approvalPrompt = readApprovalPrompt(item.approval_prompt)
+    if (approvalPrompt !== undefined) overrides.approval_prompt = approvalPrompt
     if ('camera' in item) {
       const camera = readCamera(item.camera)
       if (camera !== undefined) overrides.camera = camera

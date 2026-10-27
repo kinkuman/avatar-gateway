@@ -10,6 +10,8 @@ frontend/dist/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+assets/vrm/*.vrm
+!assets/vrm/はむ子.vrm
 local-assets/vrm/*.vrm
 local-assets/motions/*.vrma
 local-assets/backgrounds/*
@@ -17,3 +19,7 @@ local-assets/backgrounds/*
 local-assets/whisper/
 runtime/audio/*.wav
 runtime/images/*
+runtime/gaze_speech.json
+runtime/gaze_speech.json.tmp
+runtime/hermes_model.json
+runtime/.hermes_model.json.*.tmp

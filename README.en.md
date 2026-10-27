@@ -117,6 +117,27 @@ STYLEBERTVITS2_ENABLED=false
 
 Speech output adds much of the character to this application, so we recommend enabling it if you can.
 
+Speech output can use either Style-Bert-VITS2 or an OpenAI-compatible API. Switch with `AVATAR_GATEWAY_TTS_PROVIDER`; the default stays Style-Bert-VITS2.
+
+#### Optional OpenAI-Compatible Speech Output
+
+Instead of Style-Bert-VITS2, you can use `speech serve` from [speech.cpp](https://github.com/nyosegawa/speech.cpp) or OpenAI's own `POST /v1/audio/speech`. Set the provider to `openai` and configure the endpoint and voice:
+
+```env
+STYLEBERTVITS2_ENABLED=true
+AVATAR_GATEWAY_TTS_PROVIDER=openai
+OPENAI_TTS_BASE_URL=http://127.0.0.1:8080/
+OPENAI_TTS_API_KEY=
+OPENAI_TTS_MODEL=
+OPENAI_TTS_VOICE=none
+```
+
+`OPENAI_TTS_BASE_URL` works with or without a trailing `/v1`. For OpenAI itself, use `https://api.openai.com/v1` together with an API key.
+
+`OPENAI_TTS_VOICE` defaults to `none`. While it is `none` or empty, no `voice` member is sent, so for a server that requires one, such as speech.cpp, change it to a real voice name like `ono_anna`. `GET /v1/models` lists the voices a model offers.
+
+An empty `OPENAI_TTS_MODEL` uses whichever synthesis model the server holds. `OPENAI_TTS_SPEED`, `OPENAI_TTS_INSTRUCTIONS`, and `OPENAI_TTS_LANGUAGE` are not sent while empty. speech.cpp refuses members it does not take rather than ignoring them, so set only what your model supports.
+
 #### Voice for Hamuko
 
 A free Style-Bert-VITS2 voice model for Hamuko is available on BOOTH: [Hamuko Voice Data for Avatar Gateway](https://kinkuman.booth.pm/items/8885580).
@@ -157,6 +178,24 @@ FASTER_WHISPER_LOCAL_FILES_ONLY=true
 ```
 
 Avatar Gateway never downloads a Whisper model during normal startup. After installing the backend requirements, use the explicit download command described below to place the selected model under `local-assets/whisper/`. If the model is missing, only microphone input is disabled; text chat and speech output continue to work.
+
+#### Optional OpenAI-Compatible Microphone Input
+
+Instead of local faster-whisper, you can use [speech.cpp](https://github.com/nyosegawa/speech.cpp) or OpenAI's own `POST /v1/audio/transcriptions`. With `AVATAR_GATEWAY_STT_PROVIDER=openai`, the Whisper model download command is not needed:
+
+```env
+FASTER_WHISPER_ENABLED=true
+AVATAR_GATEWAY_STT_PROVIDER=openai
+OPENAI_STT_BASE_URL=http://127.0.0.1:8080/
+OPENAI_STT_API_KEY=
+OPENAI_STT_MODEL=
+OPENAI_STT_LANGUAGE=ja
+OPENAI_STT_RESPONSE_FORMAT=json
+```
+
+speech.cpp accepts only WAV, so a browser recording in WebM or MP4 is converted to 16 kHz mono WAV before it is sent. The conversion uses `av`, which ships with `faster-whisper`, so nothing extra has to be installed.
+
+Set `OPENAI_STT_RESPONSE_FORMAT=verbose_json` to also receive the language and duration the server reports. Put proper nouns you want recognized in `OPENAI_STT_PROMPT`, for a model that takes one.
 
 ## 2. Change the VRM (Optional)
 

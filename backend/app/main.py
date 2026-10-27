@@ -1,6 +1,7 @@
 """会話・音声・VRM・Web UIを同一オリジンで提供するFastAPIアプリです。"""
 
 import asyncio
+import base64
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -17,6 +18,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .config import PROJECT_ROOT, settings
 from .models import (
     HermesConversationRequest,
+    HermesModelSelectRequest,
     HermesRunApprovalRequest,
     HermesRunCreateRequest,
     HermesSessionCreateRequest,
@@ -29,14 +31,27 @@ from .services.hermes import (
     HermesSessionNotFoundError,
 )
 from .services.hermes_runs import HermesRunCoordinator
+from .services.model_selection import (
+    ModelSelectionError,
+    ModelSelectionStore,
+    SelectedHermesModel,
+    public_model_catalog,
+    selection_is_listed,
+)
 from .services.generated_images import GeneratedImageStore
 from .services.hermes_diagnostics import hermes_diagnostic_notice
-from .services.faster_whisper import (
-    FasterWhisperTranscriber,
+from .services.speech_backends import (
+    OPENAI_PROVIDER,
     NoSpeechDetectedError,
+    SpeechStreamUnsupported,
     TranscriptionError,
     TranscriptionUnavailableError,
-    is_model_installed,
+    TtsError,
+    create_transcriber,
+    create_tts_client,
+    iter_speech_pcm,
+    synthesize,
+    transcription_status,
 )
 from .services.access_control import (
     authenticate_basic_header,
@@ -59,7 +74,7 @@ from .services.speech_tags import (
     fallback_speech_summary,
     strip_speech_tags,
 )
-from .services.stylebertvits2 import TtsError, create_tts_client, synthesize
+from .services.gaze_speech import GazeSpeechStore
 from .services.touch_interaction import present_touch_input, touch_response_instructions
 from .services.ui_settings import UiSettings, UiSettingsError, UiSettingsStore, list_backgrounds
 
@@ -72,6 +87,18 @@ generated_image_store = GeneratedImageStore(
     settings.image_dir,
     settings.image_retention_days,
 )
+
+
+async def _gaze_speech_scan_loop() -> None:
+    """Hermes cronのlocal出力を定期的に確認し、新しい視線発話だけを積んでおきます。"""
+    while True:
+        try:
+            await asyncio.to_thread(gaze_store.scan)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("gaze speech scan failed")
+        await asyncio.sleep(5)
 
 
 async def _generated_image_cleanup_loop() -> None:
@@ -96,11 +123,13 @@ async def _lifespan(_app: FastAPI):
         _generated_image_cleanup_loop(),
         name="generated-image-cleanup",
     )
+    gaze_task = asyncio.create_task(_gaze_speech_scan_loop(), name="gaze-speech-scan")
     try:
         yield
     finally:
         cleanup_task.cancel()
-        await asyncio.gather(cleanup_task, return_exceptions=True)
+        gaze_task.cancel()
+        await asyncio.gather(cleanup_task, gaze_task, return_exceptions=True)
 
 
 app = FastAPI(title="Avatar Gateway", version="0.1.0", lifespan=_lifespan)
@@ -109,9 +138,14 @@ if settings.gateway_lan_mode:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.gateway_allowed_hosts))
 _PRODUCER_DONE = object()
 run_coordinator = HermesRunCoordinator(lambda: HermesClient(settings), settings.daily_timezone)
+gaze_store = GazeSpeechStore(
+    settings.hermes_cron_dir,
+    settings.gaze_state_file,
+    settings.gaze_cron_job_name,
+)
 # 読み上げ停止でHermesのRunを巻き込まず、対象のTTSワーカーだけを中断するため保持します。
 speech_sequence_workers: dict[str, asyncio.Task[None]] = {}
-transcriber = FasterWhisperTranscriber(settings)
+transcriber = create_transcriber(settings)
 
 _SUPPORTED_AUDIO_TYPES = frozenset({
     "audio/mp4",
@@ -147,6 +181,21 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _model_selection_store() -> ModelSelectionStore:
+    """テストが差し替えた設定ファイルも、いまの選択として読みます。"""
+    return ModelSelectionStore(settings.hermes_model_file)
+
+
+def _effective_hermes_model() -> str:
+    """画面の選択があればそれを、なければ起動時のモデル名を返します。"""
+    try:
+        selected = _model_selection_store().load()
+    except ModelSelectionError:
+        logger.warning("saved Hermes model selection is unreadable")
+        return settings.hermes_model
+    return selected.model if selected else settings.hermes_model
+
+
 def _load_motion_catalog() -> MotionCatalog:
     """設定不備を記録しつつ、APIを停止させない実行時カタログを返します。"""
     catalog = load_motion_catalog_safely(
@@ -162,6 +211,16 @@ def _load_motion_catalog() -> MotionCatalog:
 def _ui_settings_store() -> UiSettingsStore:
     """テスト時のSettings差し替えも反映できるよう、現在の設定パスから保存器を作ります。"""
     return UiSettingsStore(settings.ui_settings_file)
+
+
+def _approval_prompt_text(request: HermesConversationRequest) -> str:
+    """今回の会話で送られた文を優先し、未指定のときだけサーバー既定値を使います。"""
+    if request.approval_prompt is not None:
+        return request.approval_prompt
+    try:
+        return _ui_settings_store().load().approval_prompt
+    except UiSettingsError:
+        return "承認をお願いします"
 
 
 def _resolve_vrm_asset() -> tuple[Path | None, str | None]:
@@ -319,28 +378,18 @@ def _raise_hermes_api_error(exc: HermesError) -> NoReturn:
 async def health() -> dict:
     """UIが接続状態と現在の機能設定を確認できる情報を返します。"""
     vrm_path, vrm_url = _resolve_vrm_asset()
-    stt_model_installed = is_model_installed(settings)
     motion_catalog = _load_motion_catalog()
     hermes = await _hermes_health()
     return {
         "status": "ok",
-        "model": settings.hermes_model,
+        "model": _effective_hermes_model(),
         "hermes": hermes,
         "tts_enabled": settings.tts_enabled,
-        "stt": {
-            "enabled": settings.stt_enabled,
-            "available": settings.stt_enabled and stt_model_installed,
-            "model": settings.stt_model,
-            "device": settings.stt_device,
-            "compute_type": settings.stt_compute_type,
-            "message": (
-                None
-                if not settings.stt_enabled or stt_model_installed
-                else "Whisperモデルが未導入です。READMEの音声認識モデル導入手順を実行してください。"
-            ),
-        },
+        "tts_provider": settings.tts_provider,
+        "stt": transcription_status(settings),
         "vrm_available": vrm_path is not None,
         "vrm_url": vrm_url,
+        "suppress_blink_during_expression": settings.suppress_blink_during_expression,
         "motions": [motion.to_public_dict() for motion in motion_catalog.motions],
         "generating_motion": (
             motion_catalog.generating_motion.name if motion_catalog.generating_motion else None
@@ -505,6 +554,67 @@ async def start_hermes_run(request: HermesRunCreateRequest) -> dict:
         _raise_hermes_api_error(exc)
 
 
+@app.get("/api/hermes/models")
+async def list_hermes_models() -> dict:
+    """Hermesのモデル一覧を、認証情報を除いて画面へ返します。"""
+    try:
+        selected = _model_selection_store().load()
+        catalog = public_model_catalog(await HermesClient(settings).list_model_options())
+    except ModelSelectionError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except HermesError as exc:
+        _raise_hermes_api_error(exc)
+    return {
+        "default_model": settings.hermes_model,
+        "selected": selected.model_dump() if selected else None,
+        "current_model": catalog["current_model"],
+        "current_provider": catalog["current_provider"],
+        "providers": catalog["providers"],
+    }
+
+
+@app.put("/api/hermes/model")
+async def select_hermes_model(request: Request, body: HermesModelSelectRequest) -> dict:
+    """選んだモデルを保存し、進行中のセッションがあればHermesへ固定します。"""
+    if not is_same_origin_request(request.headers.get("Origin"), request.headers.get("Host")):
+        raise HTTPException(status_code=403, detail="異なるオリジンからの設定変更は許可されていません")
+    store = _model_selection_store()
+    client = HermesClient(settings)
+    try:
+        if body.use_default:
+            store.clear()
+            locked = await _lock_default_session_model(client, body.session_id)
+            return {"selected": None, "model": settings.hermes_model, "session_locked": locked}
+        if not body.model or not body.provider:
+            raise HTTPException(status_code=422, detail="モデルとプロバイダを指定してください")
+        catalog = public_model_catalog(await client.list_model_options())
+        if not selection_is_listed(catalog, body.model, body.provider):
+            raise HTTPException(status_code=422, detail="指定されたモデルはHermesの一覧にありません")
+        saved = store.save(SelectedHermesModel(model=body.model, provider=body.provider))
+        locked = False
+        if body.session_id:
+            await client.lock_session_model(body.session_id, saved.model, saved.provider)
+            locked = True
+    except ModelSelectionError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except HermesError as exc:
+        _raise_hermes_api_error(exc)
+    return {"selected": saved.model_dump(), "model": saved.model, "session_locked": locked}
+
+
+async def _lock_default_session_model(client: HermesClient, session_id: str | None) -> bool:
+    """既定へ戻すとき、進行中セッションの固定先もHermesの現在モデルへ合わせます。"""
+    if not session_id:
+        return False
+    catalog = public_model_catalog(await client.list_model_options())
+    model = catalog["current_model"]
+    provider = catalog["current_provider"]
+    if not model or not provider:
+        return False
+    await client.lock_session_model(session_id, model, provider)
+    return True
+
+
 @app.get("/api/hermes/runs/{run_id}")
 async def get_hermes_run(run_id: str) -> dict:
     """保持中またはHermesから安全に回収できた所有Run状態を返します。"""
@@ -650,6 +760,16 @@ async def stream_hermes_conversation(
                     # バッファ済みLLM差分が多い場合も、最初の合成を先に開始できるよう譲ります。
                     await asyncio.sleep(0)
 
+            async def speak_approval_prompt() -> None:
+                """承認ウィンドウの表示に合わせ、設定された一文だけを会話履歴へ残さず読み上げます。"""
+                nonlocal current_speech_motion, current_speech_expression
+                prompt = _approval_prompt_text(request)
+                if not prompt:
+                    return
+                current_speech_motion = motion_catalog.selectable_motions.get("please")
+                current_speech_expression = "relaxed"
+                await enqueue_speech_chunks([prompt])
+
             async def publish_speech_parts(
                 speech_parsed: ParsedSpeechChunk,
                 source_sequence: int | None,
@@ -754,6 +874,8 @@ async def stream_hermes_conversation(
                     if event_name in {"approval.requested", "tool.started"}:
                         # 予告文を次のLLM差分まで保留せず、承認表示やツール実行と並行して発話させます。
                         await finish_speech_scene()
+                        if event_name == "approval.requested":
+                            await speak_approval_prompt()
                         # ツール結果は別のassistant発話なので、アバター制御も独立して解析します。
                         avatar_parser = AvatarDirectiveParser(motion_catalog.selectable_motions)
                         current_speech_motion = None
@@ -826,6 +948,58 @@ async def stream_hermes_conversation(
             try:
                 if settings.tts_enabled:
                     async with create_tts_client() as client:
+                        async def emit_openai_stream(text, client, segment_index, motion, expression) -> str:
+                            """SSEで届いたPCMを順に渡し、非対応のサーバーではWAVへ戻します。"""
+                            utterance_id = uuid4().hex
+                            announced = False
+                            try:
+                                async for kind, value in iter_speech_pcm(text, settings, client):
+                                    if generation_failed:
+                                        if announced:
+                                            await event_queue.put(("speech.stream.done", {
+                                                "utterance_id": utterance_id,
+                                            }))
+                                        return "played"
+                                    if kind == "rate":
+                                        announced = True
+                                        await event_queue.put(("speech.stream.started", {
+                                            "sequence_id": sequence_id,
+                                            "segment_index": segment_index,
+                                            "utterance_id": utterance_id,
+                                            "sample_rate": value,
+                                            "motion": motion.to_public_dict() if motion else None,
+                                            "expression": expression,
+                                        }))
+                                    elif kind == "pcm" and value:
+                                        audio_ready.set()
+                                        await event_queue.put(("speech.audio.delta", {
+                                            "utterance_id": utterance_id,
+                                            "audio": base64.b64encode(value).decode("ascii"),
+                                        }))
+                                    elif kind == "done":
+                                        await event_queue.put(("speech.stream.done", {
+                                            "utterance_id": utterance_id,
+                                        }))
+                                return "played"
+                            except SpeechStreamUnsupported:
+                                if not announced:
+                                    return "wav"
+                                await event_queue.put(("speech.failed", {
+                                    "sequence_id": sequence_id,
+                                    "segment_index": segment_index,
+                                    "reason": "音声ストリームを開始した後に中断されました",
+                                }))
+                                return "failed"
+                            except TtsError as exc:
+                                if not announced:
+                                    raise
+                                await event_queue.put(("speech.failed", {
+                                    "sequence_id": sequence_id,
+                                    "segment_index": segment_index,
+                                    "reason": str(exc),
+                                }))
+                                return "failed"
+
                         while True:
                             item = await speech_queue.get()
                             if item is None:
@@ -835,6 +1009,16 @@ async def stream_hermes_conversation(
                             if generation_failed:
                                 continue
                             try:
+                                if settings.tts_provider == OPENAI_PROVIDER:
+                                    outcome = await emit_openai_stream(
+                                        text, client, segment_index, motion, expression,
+                                    )
+                                    if outcome == "played":
+                                        succeeded += 1
+                                        continue
+                                    if outcome == "failed":
+                                        failed += 1
+                                        continue
                                 utterance_id, audio_path = await synthesize(text, settings, client)
                                 generated_audio_paths.add(audio_path)
                                 if generation_failed:
@@ -964,6 +1148,66 @@ async def put_ui_settings(request: Request, value: UiSettings) -> dict:
         return _ui_settings_store().save(value).model_dump(mode="json")
     except UiSettingsError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/gaze-speech")
+async def gaze_speech_status() -> dict:
+    """対象cronジョブの新しい出力を確認し、まだ話していない件数を返します。"""
+    await asyncio.to_thread(gaze_store.scan)
+    return gaze_store.status()
+
+
+@app.post("/api/gaze-speech/claim")
+async def claim_gaze_speech() -> dict:
+    """待ち行列の先頭を音声化し、会話セッションへは書き込みません。"""
+    await asyncio.to_thread(gaze_store.scan)
+    performance = await asyncio.to_thread(gaze_store.claim)
+    if performance is None:
+        return {**gaze_store.status(), "spoken": False}
+    if not settings.tts_enabled:
+        await asyncio.to_thread(gaze_store.put_back, performance)
+        raise HTTPException(status_code=409, detail="音声合成が無効です")
+    catalog = _load_motion_catalog()
+    created: list[Path] = []
+    beats_out: list[dict] = []
+    try:
+        async with create_tts_client() as client:
+            for beat in performance.beats:
+                # 列へ入れる前に割ると三ブロックの上限で後ろが落ちるため、声の直前で会話と同じ長さへ切ります。
+                chunker = SentenceChunker(
+                    min_chars=settings.tts_chunk_min_chars,
+                    max_chars=settings.tts_chunk_max_chars,
+                )
+                chunks = [*chunker.feed(beat.text), *chunker.finish()]
+                motion = catalog.selectable_motions.get(beat.motion) if beat.motion else None
+                for chunk in chunks:
+                    utterance_id, audio_path = await synthesize(chunk, settings, client)
+                    created.append(audio_path)
+                    beats_out.append({
+                        "text": chunk,
+                        "utterance_id": utterance_id,
+                        "audio_url": f"/api/audio/{utterance_id}.wav",
+                        "motion": motion.to_public_dict() if motion else None,
+                        "expression": beat.expression,
+                    })
+    except TtsError:
+        logger.exception("gaze speech synthesis failed")
+        for path in created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("gaze speech cleanup failed for %s: %s", path, exc)
+        await asyncio.to_thread(gaze_store.put_back, performance)
+        raise HTTPException(status_code=502, detail="視線発話の音声を準備できませんでした") from None
+    first = beats_out[0]
+    return {
+        **gaze_store.status(),
+        "spoken": True,
+        "beats": beats_out,
+        "text": first["text"],
+        "utterance_id": first["utterance_id"],
+        "audio_url": first["audio_url"],
+    }
 
 
 @app.get("/api/audio/{filename}")
