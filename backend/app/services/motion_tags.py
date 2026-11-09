@@ -123,6 +123,7 @@ class ParsedAvatarChunk:
 
 _AVATAR_OPEN_TAG = "[avatar]"
 _AVATAR_CLOSE_TAG = "[/avatar]"
+_SPEECH_CLOSE_TAG = "[/speech]"
 _LEGACY_MOTION_PREFIX = "[motion:"
 _VALID_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$", re.IGNORECASE)
 _VALID_PARTIAL_NAME = re.compile(r"^[a-z0-9_-]*$", re.IGNORECASE)
@@ -315,6 +316,18 @@ class AvatarDirectiveParser:
 
             if lowered.startswith(_AVATAR_OPEN_TAG):
                 closing_index = lowered.find(_AVATAR_CLOSE_TAG, len(_AVATAR_OPEN_TAG))
+                # 閉じ損ね（[/avatar]の位置に[/speech]が来た）を、位置で復旧します。
+                # 間が有効なJSONになるときだけ暗黙閉じとし、本文を巻き込む誤爆を防ぎます。
+                speech_index = lowered.find(_SPEECH_CLOSE_TAG, len(_AVATAR_OPEN_TAG))
+                implicit_speech_close = False
+                if 0 <= speech_index and (closing_index < 0 or speech_index < closing_index):
+                    candidate = self._buffer[len(_AVATAR_OPEN_TAG):speech_index]
+                    try:
+                        implicit_speech_close = isinstance(json.loads(candidate), dict)
+                    except json.JSONDecodeError:
+                        implicit_speech_close = False
+                if implicit_speech_close:
+                    closing_index = speech_index
                 if closing_index < 0:
                     if len(self._buffer) > _MAX_DIRECTIVE_LENGTH:
                         parts.append(self._discard_directive())
@@ -322,7 +335,8 @@ class AvatarDirectiveParser:
                 raw_json = self._buffer[len(_AVATAR_OPEN_TAG):closing_index]
                 motion, expression = self._parse_directive(raw_json)
                 # 不正JSONや未知名も制御文字列として隠し、安全なneutralへフォールバックします。
-                self._buffer = self._buffer[closing_index + len(_AVATAR_CLOSE_TAG):].lstrip()
+                consumed = _SPEECH_CLOSE_TAG if implicit_speech_close else _AVATAR_CLOSE_TAG
+                self._buffer = self._buffer[closing_index + len(consumed):].lstrip()
                 parts.append(ParsedAvatarChunk("", motion, expression))
                 self._at_start = False
                 continue
