@@ -741,8 +741,16 @@ class HermesClient:
             not_found_message="Avatar GatewayのRunが見つかりません",
             conflict_message="この承認要求は既に解決済みか、期限切れです",
         )
+        status = payload.get("status")
         resolved = payload.get("resolved")
-        if not isinstance(resolved, int) or isinstance(resolved, bool) or resolved < 1:
+        if isinstance(resolved, int) and not isinstance(resolved, bool):
+            # 旧Hermes(非authority): 解決件数 ``resolved`` を返す
+            if resolved < 1:
+                raise HermesError("Hermes Run承認APIの応答形式が正しくありません")
+        elif status in {"resolved", "already_resolved"}:
+            # 新Hermes(session authority): ``{status, prompt_id}`` を返す
+            resolved = 1 if status == "resolved" else 0
+        else:
             raise HermesError("Hermes Run承認APIの応答形式が正しくありません")
         return {
             "run_id": run_id,

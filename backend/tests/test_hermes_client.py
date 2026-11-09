@@ -436,6 +436,57 @@ async def test_run_approval_sends_one_scoped_choice() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_approval_accepts_authority_status_shape() -> None:
+    """session authority版Hermesの ``{status, prompt_id}`` 応答を成功として受け入れる。"""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={
+            "run_id": RUN_ID,
+            "status": "resolved",
+            "prompt_id": "prompt-1",
+        })
+
+    config = replace(Settings(), hermes_api_key="secret-value")
+    approved = await HermesClient(config, httpx.MockTransport(handler)).respond_to_run_approval(
+        RUN_ID,
+        "once",
+        request_id="prompt-1",
+        execution_generation=3,
+    )
+
+    assert approved == {"run_id": RUN_ID, "choice": "once", "resolved": 1}
+    assert json.loads(requests[0].content) == {
+        "choice": "once",
+        "request_id": "prompt-1",
+        "execution_generation": 3,
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_approval_accepts_already_resolved_status() -> None:
+    """権威APIの ``already_resolved`` は二重クリック安全として resolved=0 で成功にする。"""
+    handler = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200, json={"run_id": RUN_ID, "status": "already_resolved", "prompt_id": "prompt-1"},
+        ),
+    )
+    config = replace(Settings(), hermes_api_key="secret-value")
+    approved = await HermesClient(config, handler).respond_to_run_approval(RUN_ID, "once")
+    assert approved == {"run_id": RUN_ID, "choice": "once", "resolved": 0}
+
+
+@pytest.mark.asyncio
+async def test_run_approval_rejects_unknown_shape() -> None:
+    """既知どちらでもない応答は引き続き形式エラーとして弾く。"""
+    handler = httpx.MockTransport(lambda _request: httpx.Response(200, json={"run_id": RUN_ID}))
+    config = replace(Settings(), hermes_api_key="secret-value")
+    with pytest.raises(HermesError, match="応答形式"):
+        await HermesClient(config, handler).respond_to_run_approval(RUN_ID, "once")
+
+
+@pytest.mark.asyncio
 async def test_expired_run_approval_becomes_safe_conflict() -> None:
     """Hermesの内部409本文を隠し、UIが再試行判断できる競合例外へ変換します。"""
     transport = httpx.MockTransport(
