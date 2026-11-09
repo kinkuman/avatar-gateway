@@ -39,6 +39,8 @@ class _RunRecord:
     recovered: bool = False
     event_history_available: bool = True
     approval_details_available: bool = True
+    approval_request_id: str | None = None
+    approval_execution_generation: int | None = None
     condition: asyncio.Condition = field(default_factory=asyncio.Condition)
     approval_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     task: asyncio.Task[None] | None = None
@@ -131,10 +133,18 @@ class HermesRunCoordinator:
         if event_type == "approval.request":
             raw_choices = raw.get("choices")
             choices = raw_choices if isinstance(raw_choices, list) else []
+            request_id = raw.get("prompt_id") or raw.get("request_id")
+            execution_generation = raw.get("execution_generation")
             return {
                 "type": "approval.requested",
                 "command": str(raw.get("command") or ""),
                 "description": str(raw.get("description") or ""),
+                "request_id": request_id if isinstance(request_id, str) and request_id else None,
+                "execution_generation": (
+                    execution_generation
+                    if isinstance(execution_generation, int) and not isinstance(execution_generation, bool)
+                    else None
+                ),
                 "choices": [
                     choice for choice in choices
                     if choice in {"once", "session", "always", "deny"}
@@ -193,8 +203,16 @@ class HermesRunCoordinator:
                 record.status = "running"
             elif event_type == "approval.requested":
                 record.status = "waiting_for_approval"
+                request_id = stored.get("request_id")
+                record.approval_request_id = request_id if isinstance(request_id, str) and request_id else None
+                generation = stored.get("execution_generation")
+                record.approval_execution_generation = (
+                    generation if isinstance(generation, int) and not isinstance(generation, bool) else None
+                )
             elif event_type == "approval.responded":
                 record.status = "running"
+                record.approval_request_id = None
+                record.approval_execution_generation = None
             elif event_type in {"tool.started", "tool.completed", "agent.thinking", "assistant.delta"}:
                 record.status = "running"
             elif event_type in {"run.recovered", "run.status"}:
@@ -228,6 +246,39 @@ class HermesRunCoordinator:
                     record,
                     {"type": "agent.failed", "message": "Hermes Runイベントが完了前に終了しました"},
                 )
+
+    @staticmethod
+    def _approval_prompt_from_state(state: dict[str, Any]) -> dict[str, Any] | None:
+        """Run状態APIのpending_controlsから、回答可能な承認プロンプトを1件取り出します。"""
+        prompts = state.get("pending_controls")
+        if not isinstance(prompts, (list, tuple)):
+            return None
+        for prompt in prompts:
+            if not isinstance(prompt, dict) or prompt.get("kind") != "approval":
+                continue
+            prompt_id = prompt.get("prompt_id")
+            generation = prompt.get("execution_generation")
+            if (
+                isinstance(prompt_id, str)
+                and prompt_id
+                and isinstance(generation, int)
+                and not isinstance(generation, bool)
+            ):
+                return prompt
+        return None
+
+    @staticmethod
+    def _approval_event_from_prompt(prompt: dict[str, Any]) -> dict[str, Any]:
+        raw_choices = prompt.get("choices")
+        choices = raw_choices if isinstance(raw_choices, list) else []
+        return {
+            "type": "approval.requested",
+            "command": str(prompt.get("command") or ""),
+            "description": str(prompt.get("description") or ""),
+            "request_id": str(prompt["prompt_id"]),
+            "execution_generation": int(prompt["execution_generation"]),
+            "choices": [choice for choice in choices if choice in {"once", "session", "always", "deny"}],
+        }
 
     async def _poll_recovered_run(self, record: _RunRecord) -> None:
         """失われたSSEを再購読せず、Hermes状態APIだけで回収Runの終端を監視します。"""
@@ -283,6 +334,12 @@ class HermesRunCoordinator:
             # 停止要求後に上流が一時的にrunningを返しても、画面を作業中へ戻しません。
             if record.status == "stopping" and status in {"started", "running", "waiting_for_approval"}:
                 continue
+            if status == "waiting_for_approval":
+                # 回収Runの承認はSSE経由で届かないため、状態APIのpending_controlsから復元します。
+                prompt = self._approval_prompt_from_state(state)
+                if prompt is not None and prompt["prompt_id"] != record.approval_request_id:
+                    record.approval_details_available = True
+                    await self._append_event(record, self._approval_event_from_prompt(prompt))
             if status != record.status:
                 await self._append_event(
                     record,
@@ -349,6 +406,13 @@ class HermesRunCoordinator:
             if terminal_event is not None:
                 await self._append_event(record, terminal_event)
             else:
+                if status == "waiting_for_approval":
+                    prompt = self._approval_prompt_from_state(state)
+                    if prompt is not None:
+                        # 新Hermesはpending_controlsへ prompt_id と execution_generation を
+                        # 載せて返すため、SSEを失った承認でも安全に回答できます。
+                        record.approval_details_available = True
+                        await self._append_event(record, self._approval_event_from_prompt(prompt))
                 record.task = asyncio.create_task(self._poll_recovered_run(record))
             return record.to_public_dict()
 
@@ -417,7 +481,12 @@ class HermesRunCoordinator:
             if record.finished or record.status != "waiting_for_approval":
                 raise HermesConflictError("この承認要求は既に解決済みか、期限切れです")
             approval_sequence = record.next_sequence - 1
-            result = await self._client_factory().respond_to_run_approval(run_id, choice)
+            result = await self._client_factory().respond_to_run_approval(
+                run_id,
+                choice,
+                request_id=record.approval_request_id,
+                execution_generation=record.approval_execution_generation,
+            )
             # SSEが未到着の場合だけ暫定更新し、連続する次の承認要求をrunningで上書きしません。
             async with record.condition:
                 if (

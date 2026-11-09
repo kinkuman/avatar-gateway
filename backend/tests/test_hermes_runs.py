@@ -89,7 +89,7 @@ class _FakeHermesClient:
         self.started_with: dict | None = None
         self.stopped_runs: list[str] = []
         self.approval_gate = asyncio.Event()
-        self.approval_responses: list[tuple[str, str]] = []
+        self.approval_responses: list[tuple[str, str, str | None, int | None]] = []
 
     async def get_session(self, session_id: str) -> HermesSession:
         assert session_id == SESSION_ID
@@ -142,9 +142,16 @@ class _FakeHermesClient:
         self.stopped_runs.append(run_id)
         return {"run_id": run_id, "status": "stopping"}
 
-    async def respond_to_run_approval(self, run_id: str, choice: str) -> dict:
+    async def respond_to_run_approval(
+        self,
+        run_id: str,
+        choice: str,
+        *,
+        request_id: str | None = None,
+        execution_generation: int | None = None,
+    ) -> dict:
         """承認回答を記録し、待機中の模擬Hermes Runを再開します。"""
-        self.approval_responses.append((run_id, choice))
+        self.approval_responses.append((run_id, choice, request_id, execution_generation))
         self.approval_gate.set()
         return {"run_id": run_id, "choice": choice, "resolved": 1}
 
@@ -237,6 +244,8 @@ async def test_coordinator_answers_only_waiting_approval_and_resumes_run() -> No
     client = _FakeHermesClient(events=[
         {
             "event": "approval.request",
+            "prompt_id": "req-77",
+            "execution_generation": 3,
             "command": "safe-command",
             "description": "確認が必要です",
             "choices": ["once", "session", "always", "deny"],
@@ -258,7 +267,7 @@ async def test_coordinator_answers_only_waiting_approval_and_resumes_run() -> No
     events = [event async for event in coordinator.stream_events(RUN_ID) if event is not None]
 
     assert approved["status"] == "running"
-    assert client.approval_responses == [(RUN_ID, "once")]
+    assert client.approval_responses == [(RUN_ID, "once", "req-77", 3)]
     assert [event["type"] for event in events] == [
         "agent.started",
         "approval.requested",
@@ -266,6 +275,8 @@ async def test_coordinator_answers_only_waiting_approval_and_resumes_run() -> No
         "assistant.completed",
     ]
     assert events[1]["command"] == "safe-command"
+    assert events[1]["request_id"] == "req-77"
+    assert events[1]["execution_generation"] == 3
     assert coordinator.get_run(RUN_ID)["status"] == "completed"
 
 
@@ -314,6 +325,41 @@ async def test_recovered_approval_is_blocked_but_run_can_be_stopped() -> None:
     assert stopped["status"] == "stopping"
     assert client.approval_responses == []
     assert client.stopped_runs == [RUN_ID]
+    task = coordinator._records[RUN_ID].task
+    assert task is not None
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_recovered_approval_with_pending_controls_can_be_answered() -> None:
+    """新Hermesのpending_controls経由ならSSE喪失後の承認もrequest_id付きで回答できます。"""
+    client = _FakeHermesClient(recovered_states=[{
+        "run_id": RUN_ID,
+        "session_id": SESSION_ID,
+        "status": "waiting_for_approval",
+        "pending_controls": [{
+            "kind": "approval",
+            "prompt_id": "req-9",
+            "execution_generation": 2,
+            "command": "rm -i tmp",
+            "description": "削除の確認",
+            "choices": ["once", "deny"],
+        }],
+    }])
+    coordinator = HermesRunCoordinator(lambda: client)
+
+    recovered = await coordinator.get_or_recover_run(RUN_ID)
+    answered = await coordinator.respond_to_approval(RUN_ID, "once")
+    stored_events = list(coordinator._records[RUN_ID].events)
+
+    assert recovered["approval_details_available"] is True
+    assert client.approval_responses == [(RUN_ID, "once", "req-9", 2)]
+    assert answered["status"] == "running"
+    approval_event = next(event for event in stored_events if event["type"] == "approval.requested")
+    assert approval_event["request_id"] == "req-9"
+    assert approval_event["execution_generation"] == 2
+    assert approval_event["command"] == "rm -i tmp"
     task = coordinator._records[RUN_ID].task
     assert task is not None
     task.cancel()

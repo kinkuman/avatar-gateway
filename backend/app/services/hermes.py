@@ -708,16 +708,33 @@ class HermesClient:
             "status": str(payload.get("status") or "stopping"),
         }
 
-    async def respond_to_run_approval(self, run_id: str, choice: str) -> dict[str, Any]:
-        """承認待ちRunへ一件だけ回答し、Hermesが解決した件数を検証して返します。"""
+    async def respond_to_run_approval(
+        self,
+        run_id: str,
+        choice: str,
+        *,
+        request_id: str | None = None,
+        execution_generation: int | None = None,
+    ) -> dict[str, Any]:
+        """承認待ちRunへ一件だけ回答し、Hermesが解決した件数を検証して返します。
+
+        新しめのHermes(session authority)は ``request_id`` と ``execution_generation`` を
+        含む3項目のbodyを要求するため、承認要求イベントから取得した値をそのまま転送します。
+        旧バージョンでは両者が届かないため従来どおり ``choice`` のみで送信します。
+        """
         self._require_run_id(run_id)
         if choice not in {"once", "session", "always", "deny"}:
             raise HermesError("承認回答が正しくありません")
+        body: dict[str, Any] = {"choice": choice}
+        if request_id:
+            body["request_id"] = request_id
+        if execution_generation is not None:
+            body["execution_generation"] = execution_generation
         payload = await self._request_json(
             "POST",
             f"/v1/runs/{run_id}/approval",
             operation="Run承認API",
-            body={"choice": choice},
+            body=body,
             not_found_message="Avatar GatewayのRunが見つかりません",
             conflict_message="この承認要求は既に解決済みか、期限切れです",
         )
