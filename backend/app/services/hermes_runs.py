@@ -480,12 +480,26 @@ class HermesRunCoordinator:
                 )
             if record.finished or record.status != "waiting_for_approval":
                 raise HermesConflictError("この承認要求は既に解決済みか、期限切れです")
+            request_id = record.approval_request_id
+            execution_generation = record.approval_execution_generation
+            # 新Hermes(session authority)はrequest_id・execution_generation・choiceの
+            # 3項目を厳格に要求するが、SSEのapproval.requestイベントは
+            # execution_generationを運ばない。Run状態APIのpending_controlsだけを
+            # 正典として、回答直前に最新のプロンプトへ同期し直す。
+            try:
+                state = await self._client_factory().get_run(run_id)
+            except HermesError:
+                state = None
+            prompt = self._approval_prompt_from_state(state) if state else None
+            if prompt is not None:
+                request_id = str(prompt["prompt_id"])
+                execution_generation = int(prompt["execution_generation"])
             approval_sequence = record.next_sequence - 1
             result = await self._client_factory().respond_to_run_approval(
                 run_id,
                 choice,
-                request_id=record.approval_request_id,
-                execution_generation=record.approval_execution_generation,
+                request_id=request_id,
+                execution_generation=execution_generation,
             )
             # SSEが未到着の場合だけ暫定更新し、連続する次の承認要求をrunningで上書きしません。
             async with record.condition:

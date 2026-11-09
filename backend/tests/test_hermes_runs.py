@@ -281,6 +281,47 @@ async def test_coordinator_answers_only_waiting_approval_and_resumes_run() -> No
 
 
 @pytest.mark.asyncio
+async def test_live_approval_without_generation_syncs_from_pending_controls() -> None:
+    """実HermesのSSEはexecution_generationを運ばない。回答直前にRun状態APIの
+    pending_controlsから3項目を揃え、session authorityの400を発生させない。"""
+    client = _FakeHermesClient(events=[
+        {
+            "event": "approval.request",
+            "request_id": "req-live",
+            "command": "flagged-command",
+            "description": "確認が必要です",
+            "choices": ["once", "session", "always", "deny"],
+        },
+        {"event": "approval.responded", "choice": "once", "resolved": 1},
+        {"event": "run.completed", "output": "完了"},
+    ])
+    client.recovered_states = [{
+        "run_id": RUN_ID,
+        "session_id": SESSION_ID,
+        "status": "waiting_for_approval",
+        "pending_controls": [{
+            "kind": "approval",
+            "prompt_id": "req-live",
+            "execution_generation": 7,
+            "command": "flagged-command",
+            "description": "確認が必要です",
+            "choices": ["once", "session", "always", "deny"],
+        }],
+    }]
+    coordinator = HermesRunCoordinator(lambda: client)
+
+    await coordinator.start_run(SESSION_ID, "承認が必要な作業")
+    for _attempt in range(20):
+        if coordinator.get_run(RUN_ID)["status"] == "waiting_for_approval":
+            break
+        await asyncio.sleep(0)
+
+    await coordinator.respond_to_approval(RUN_ID, "once")
+
+    assert client.approval_responses == [(RUN_ID, "once", "req-live", 7)]
+
+
+@pytest.mark.asyncio
 async def test_coordinator_recovers_completed_run_without_fabricating_event_history() -> None:
     """再起動前の本文やツールを捏造せず、Hermesの確定状態だけを回収します。"""
     client = _FakeHermesClient(recovered_states=[{

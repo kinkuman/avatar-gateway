@@ -657,6 +657,9 @@ class HermesClient:
             "output",
             "usage",
             "error",
+            "pending_controls",
+            "execution_generation",
+            "admission_id",
         )
         return {key: payload.get(key) for key in safe_keys if key in payload}
 
