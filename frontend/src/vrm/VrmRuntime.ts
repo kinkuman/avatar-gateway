@@ -637,12 +637,23 @@ export class VrmRuntime {
     }
   }
 
+  /** VRM0基準の独自動作をモデルの座標系へ変換し、両形式で動作方向を揃えます。 */
+  private createPoseDeltaRotation(x: number, y: number, z: number): THREE.Quaternion {
+    const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+    // Y軸まわりの180度の基準差を吸収します。VRMAの補正済み姿勢には適用しません。
+    if (this.vrm.meta.metaVersion === '1') {
+      rotation.x = -rotation.x
+      rotation.z = -rotation.z
+    }
+    return rotation
+  }
+
   /** 保存したRest Poseへ差分を一度だけ加え、Mixerが読む安定した基準姿勢を作ります。 */
   private applyRestDeltaRotation(name: VRMHumanBoneName, x: number, y: number, z: number): void {
     const node = this.vrm.humanoid.getNormalizedBoneNode(name)
     const rest = this.restRotations.get(name)
     if (!node || !rest) return
-    const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+    const delta = this.createPoseDeltaRotation(x, y, z)
     node.quaternion.copy(rest).multiply(delta)
   }
 
@@ -651,7 +662,7 @@ export class VrmRuntime {
     const node = this.vrm.humanoid.getNormalizedBoneNode(name)
     const rest = this.restRotations.get(name)
     if (!node || !rest) return
-    const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+    const delta = this.createPoseDeltaRotation(x, y, z)
     const idlePose = rest.clone().multiply(delta)
     const evaluated = this.evaluatedRotations.get(name)
     if (evaluated && this.primaryMotionWeight > 0) {
@@ -664,7 +675,7 @@ export class VrmRuntime {
   private applyProceduralRotation(name: VRMHumanBoneName, x: number, y: number, z: number): void {
     const node = this.vrm.humanoid.getNormalizedBoneNode(name)
     if (!node) return
-    const procedural = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+    const procedural = this.createPoseDeltaRotation(x, y, z)
     node.quaternion.multiply(procedural)
   }
 

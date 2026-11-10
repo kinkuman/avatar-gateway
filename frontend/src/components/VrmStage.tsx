@@ -784,9 +784,9 @@ export default function VrmStage({
         }
         VRMUtils.removeUnnecessaryVertices(gltf.scene)
         VRMUtils.combineSkeletons(gltf.scene)
+        // VRM0だけを回転し、VRM1と同じ正面方向に揃えます。
         VRMUtils.rotateVRM0(vrm)
         scene.add(vrm.scene)
-        vrm.scene.rotation.y = Math.PI
         if (castOffEnabled) {
           logCastOffVrmStructure(vrm, gltf.parser.json.asset)
           castOffControllerRef.current = new CastOffController(vrm)
