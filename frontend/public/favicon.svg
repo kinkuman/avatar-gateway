@@ -1,0 +1,15 @@
+<!-- 相棒を呼び出す猫鈴を、小さなブラウザタブでも識別できる形で表したアイコンです。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Avatar Gateway — 相棒を呼ぶ猫鈴</title>
+  <!-- 赤い首輪を鈴の後ろに通し、背景は透過して明暗どちらのタブにも置けるようにします。 -->
+  <rect x="5" y="5" width="54" height="12" rx="6" fill="#E84647"/>
+  <path d="M27 12h10v10H27z" fill="#F8C64B" stroke="#6C411C" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="32" cy="37" r="23" fill="#F6C443" stroke="#6C411C" stroke-width="3"/>
+  <!-- 色面だけで光を表し、縮小時に細かな装飾がノイズになるのを防ぎます。 -->
+  <path d="M15 31a18 18 0 0 1 15-12" fill="none" stroke="#FFE99B" stroke-width="4" stroke-linecap="round"/>
+  <path d="M11 32h42v7H11z" fill="#E9A82E"/>
+  <path d="M10 32h44M10 39h44" fill="none" stroke="#6C411C" stroke-width="3" stroke-linecap="round"/>
+  <!-- 丸穴と下端までの切れ込みを太くつなぎ、猫鈴の特徴を16pxでも残します。 -->
+  <path d="M32 48v11" fill="none" stroke="#51351E" stroke-width="4"/>
+  <circle cx="32" cy="47" r="5" fill="#51351E"/>
+</svg>
