@@ -18,21 +18,32 @@ Avatar Gatewayは、HermesAgentの返答をVRMアバターの表情・口パク�
 - faster-whisperによる日本語の音声入力（任意）
 - 読み上げだけを止める操作と、Hermesの作業ごと止める操作
 - ページ再読み込み後も、実行中の作業へ再接続
-- HermesのSkill・Toolsetの確認
+- HermesのSkill・Toolsetの確認（一部のHermesバージョンでは利用不可。[対処方法](#機能一覧でskill一覧apiエラー-502と表示される)）
 - 会話履歴の閲覧、分岐、削除
 - Hermesが生成した画像の表示
 - VRMの表情、口パク、待機動作、モーション
 - カメラ操作、壁紙変更、アバターとのふれあい
 - 音声機能を使わないテキストだけの会話
 
+
+### 追加された機能
+
+- speech.cppのOpenAI互換APIによる日本語の読み上げ（任意）
+- speech.cppのOpenAI互換APIによる日本語の音声入力（任意）
+- 顔認識機能、ウェブカメラで顔を認識した場合、身振りを行い、メッセージがあればそれを発言します。
+- [会話に使うLLMモデルの切り替え](#会話に使うllmモデルを切り替える)
+
+
 ## 必要なもの
 
 - Python 3.11以降
 - Node.js 20以降
 - HermesAgent API Server (Hermes Agentに同梱)
-- Style-Bert-VITS2（音声を使う場合）
-- faster-whisper（音声入力を使う場合。バックエンド依存関係から導入されます）
+- 読み上げを使う場合：Style-Bert-VITS2、またはOpenAI互換の音声合成API
+- 音声入力を使う場合：faster-whisper、またはOpenAI互換の音声認識API
 - 利用権限のあるVRMファイル（同梱サンプルから差し替える場合）
+
+OpenAI互換APIには、speech.cppなどの対応サービスを使えます。faster-whisperはバックエンドの依存関係として導入されますが、ローカルで音声認識を使う場合は、後述の手順で認識モデルも取得してください。
 
 Hermesは次の設定(.env)で起動している前提です。
 
@@ -58,15 +69,15 @@ cp .env.example .env
 ```env
 HERMES_BASE_URL=http://127.0.0.1:8642/v1
 HERMES_API_KEY=HermesのAPI_SERVER_KEY
-HERMES_IMAGE_CACHE_DIR=~/.hermes/cache/images
+HERMES_IMAGE_CACHE_DIR=~/.hermes/cache/generated/images
 AVATAR_GATEWAY_IMAGE_RETENTION_DAYS=90
 ```
 
 通常は既定Profileのまま利用できます。別のProfileを使う場合は、[別のHermes Profileを使う（任意）](#別のhermes-profileを使う任意)を確認してください。
 
-Hermesの`image_generate`を使う場合は、生成画像キャッシュの場所も確認します。Hermesの標準配置では上記の値をそのまま利用できます。`HERMES_HOME`を変更している場合は、実際の`cache/images`ディレクトリを指定してください。パスを変更した場合はバックエンドを再起動してください。保持期間は既定の90日で、通常は変更する必要はありません。
+Hermesの`image_generate`を使う場合は、生成画像キャッシュの場所も確認します。`cache/generated/images`へ保存するHermesを標準配置で使う場合は、上記の値をそのまま利用できます。旧バージョンでは保存先が`cache/images`の場合もあるため、使用中のHermesが実際に保存する場所に合わせてください。`HERMES_HOME`を変更している場合は、その配下の`cache/generated/images`など、実際の保存先を指定します。パスを変更した場合はバックエンドを再起動してください。保持期間は既定の90日で、通常は変更する必要はありません。
 
-生成画像を表示するには、Avatar GatewayバックエンドからHermesの画像キャッシュをローカルファイルとして参照できる必要があります。HermesとAvatar Gatewayを別のサーバーで動かす場合は、Hermesの`cache/images`を共有ストレージなどでAvatar Gateway側へマウントし、そのパスを`HERMES_IMAGE_CACHE_DIR`に指定してください。画像キャッシュを共有できない構成では、会話は利用できますが生成画像は表示されません。
+生成画像を表示するには、Avatar GatewayバックエンドからHermesの画像キャッシュをローカルファイルとして参照できる必要があります。HermesとAvatar Gatewayを別のサーバーで動かす場合は、Hermesの画像保存先を共有ストレージなどでAvatar Gateway側へマウントし、そのパスを`HERMES_IMAGE_CACHE_DIR`に指定してください。画像キャッシュを共有できない構成では、会話は利用できますが生成画像は表示されません。
 
 ### 会話で使う日時と時間帯
 
@@ -85,13 +96,14 @@ Hermesの`image_generate`を使う場合は、生成画像キャッシュの場�
 
 同じセッションでは前回の会話日時も伝えるため、時間の経過を踏まえた返答ができます。新しいセッションは初回の会話として扱います。設定を元に戻すには、`.env`の`AVATAR_GATEWAY_TIMEZONE`を削除するか`Asia/Tokyo`に戻して、バックエンドを再起動してください。
 
-### 音声合成（任意）
+### 音声合成 Style-Bert-VITS2（任意）
 
 ![音声合成](docs/images/tts.png)
 
-公開用設定例ではStyle-Bert-VITS2を無効にしています。読み上げを使う場合はStyle-Bert-VITS2を起動し、`.env`の`STYLEBERTVITS2_ENABLED=true`へ変更します。接続先や声は次の項目で設定します。
+※読み上げにはStyle-Bert-VITS2とOpenAI互換APIのどちらかを使えます。OpenAI互換APIを使う場合は、
+[音声合成OpenAI互換APIを読み上げに使う（任意）](#音声合成openai互換apiを読み上げに使う任意)を確認してください。
 
-読み上げにはStyle-Bert-VITS2とOpenAI互換APIのどちらかを使えます。`AVATAR_GATEWAY_TTS_PROVIDER`で切り替え、既定はこれまでどおりのStyle-Bert-VITS2です。
+公開用設定例ではStyle-Bert-VITS2を無効にしています。読み上げを使う場合はStyle-Bert-VITS2を起動し、`.env`の`STYLEBERTVITS2_ENABLED=true`へ変更します。接続先や声は次の項目で設定します。
 
 ```env
 STYLEBERTVITS2_SERVER_URL=http://127.0.0.1:5000
@@ -112,24 +124,6 @@ STYLEBERTVITS2_ENABLED=false
 ```
 但し、音声合成がない場合、`このアプリの良さが半減してしまう`ため、導入をおすすめします。
 
-#### OpenAI互換APIを読み上げに使う（任意）
-
-Style-Bert-VITS2のかわりに、[speech.cpp](https://github.com/nyosegawa/speech.cpp)の`speech serve`や本家OpenAIの`POST /v1/audio/speech`を使えます。提供元を`openai`へ変え、接続先と声を設定します。
-
-```env
-STYLEBERTVITS2_ENABLED=true
-AVATAR_GATEWAY_TTS_PROVIDER=openai
-OPENAI_TTS_BASE_URL=http://127.0.0.1:8080/
-OPENAI_TTS_API_KEY=
-OPENAI_TTS_MODEL=
-OPENAI_TTS_VOICE=none
-```
-
-`OPENAI_TTS_BASE_URL`には`/v1`を含めても含めなくても構いません。本家OpenAIを使う場合は`https://api.openai.com/v1`とAPIキーを指定します。
-
-`OPENAI_TTS_VOICE`は既定で`none`です。`none`または空の間は`voice`を送らないため、speech.cppのように`voice`が必須なサーバーでは、`ono_anna`など実際の声名へ変更してください。利用できる声は`GET /v1/models`で確認できます。
-
-`OPENAI_TTS_MODEL`が空なら、サーバーが保持している合成モデルをそのまま使います。`OPENAI_TTS_SPEED`、`OPENAI_TTS_INSTRUCTIONS`、`OPENAI_TTS_LANGUAGE`は空なら送信しません。speech.cppは受け付けない項目を無視せずエラーにするため、モデルが対応するものだけ設定してください。
 
 #### はむ子用音声
 
@@ -157,9 +151,14 @@ cd Style-Bert-VITS2
 取得後のインストールと起動は、ダウンロードしたStyle-Bert-VITS2内のREADMEに従ってください。
 
 
-### 音声認識（任意）
+### 音声認識 faster-whisper（任意）
 
 ![音声認識](docs/images/stt.png)
+
+※音声認識にはfaster-whisperとOpenAI互換APIのどちらかを使えます。OpenAI互換APIを使う場合は、
+[OpenAI互換APIを音声認識に使う（任意）](#openai互換apiを音声認識に使う任意)を確認してください。
+
+
 
 公開用設定例では音声入力も無効にしています。マイク入力を使う場合は`FASTER_WHISPER_ENABLED=true`へ変更します。有効時は、LLMが使用中のVRAMを圧迫しないようCPUのINT8演算を既定にしています。
 
@@ -177,24 +176,6 @@ FASTER_WHISPER_LOCAL_FILES_ONLY=true
 音声入力を有効にしても、通常起動中にモデルを自動取得しません。依存関係をインストールした後、後述(4.バックエンドの起動)の明示コマンドで`small`モデルを`local-assets/whisper/`へ取得してください。モデルがない場合はマイクだけを無効化し、テキスト会話と読み上げは継続します。認識速度や精度を比較する場合は、導入前に`FASTER_WHISPER_MODEL`で別のモデルを明示できます。
 
 音声入力を使わない環境では`FASTER_WHISPER_ENABLED=false`にします。この場合もテキスト入力と読み上げは従来どおり利用できます。
-
-#### OpenAI互換APIを音声認識に使う（任意）
-
-ローカルfaster-whisperのかわりに、[speech.cpp](https://github.com/nyosegawa/speech.cpp)や本家OpenAIの`POST /v1/audio/transcriptions`を使えます。`AVATAR_GATEWAY_STT_PROVIDER=openai`にすると、Whisperモデルの導入コマンドは不要です。
-
-```env
-FASTER_WHISPER_ENABLED=true
-AVATAR_GATEWAY_STT_PROVIDER=openai
-OPENAI_STT_BASE_URL=http://127.0.0.1:8080/
-OPENAI_STT_API_KEY=
-OPENAI_STT_MODEL=
-OPENAI_STT_LANGUAGE=ja
-OPENAI_STT_RESPONSE_FORMAT=json
-```
-
-speech.cppはWAVしか受け取らないため、ブラウザがWebMやMP4で録音した音声は、送信前に16kHzモノラルのWAVへ変換します。変換には`faster-whisper`が同梱する`av`を使うため、追加の導入は必要ありません。
-
-`OPENAI_STT_RESPONSE_FORMAT`に`verbose_json`を指定すると、サーバーが返す言語と長さも受け取ります。固有名詞を認識させたい場合は`OPENAI_STT_PROMPT`へ書きます（対応モデルのみ）。
 
 ## 2. VRMを変更する（任意）
 
@@ -216,7 +197,7 @@ assets/vrm/はむ子.vrm
 local-assets/vrm/
 ```
 
-`local-assets/vrm/`は、利用者が追加するVRMを置くためのフォルダです。
+`local-assets/vrm/`は、利用者が追加するVRMを置くためのフォルダです。(gitの管理対象となりません)
 
 次に、`.env`の`AVATAR_VRM_FILE`へコピーしたファイル名を指定します。
 
@@ -248,7 +229,7 @@ python3 -m venv .venv
 .venv/bin/python -m app
 ```
 
-音声入力を使う場合だけ、`.env`で`FASTER_WHISPER_ENABLED=true`へ変更した後、バックエンドを起動する前に次を実行します。
+ローカルのfaster-whisperで音声入力を使う場合だけ、`.env`で`FASTER_WHISPER_ENABLED=true`へ変更した後、バックエンドを起動する前に次を実行します。`AVATAR_GATEWAY_STT_PROVIDER=openai`でOpenAI互換APIを使う場合、このモデル取得は不要です。
 
 ```bash
 .venv/bin/python -m scripts.download_whisper_model
@@ -465,6 +446,12 @@ Hermesが作業中、承認待ち、音声合成中、または発話中は、�
 
 この画面は読み取り専用です。Avatar GatewayからHermesのToolsetやSkill設定は変更しません。表示内容を変更するときはHermes側を設定し、「再読込」を押してください。
 
+### 会話に使うLLMモデルを切り替える
+
+チャット欄上部の「機能一覧」の右にある「モデルを切り替える」ボタンを押すと、Hermesが公開するモデル一覧を開きます。「モデルを絞り込む」へ名前を入力し、利用したいプロバイダのモデルを選んでください。利用するプロバイダの認証情報は、あらかじめHermes側に設定しておきます。
+
+選んだモデルは次のメッセージ送信から使われ、Avatar Gatewayの再起動後も選択が保存されます。元へ戻す場合は、同じ一覧で「既定のモデル」を選んでください。Hermesがモデル一覧APIに対応していない場合は、この画面から切り替えられません。
+
 ### 読み上げ
 
 Style-Bert-VITS2を有効にすると、返答全体の完成を待たず、できあがった文章から順に読み上げます。コマンドや詳しい実行結果は画面だけに表示し、結果の概要を読み上げます。一部の音声生成に失敗しても、文章の表示とその後の読み上げは続きます。
@@ -631,7 +618,47 @@ Basic認証を使う場合だけ、`AVATAR_GATEWAY_AUTH_PASSWORD`へ16文字以�
 
 HTTP Basic認証はアクセス制限を提供しますが、HTTP通信自体を暗号化しません。信頼できる家庭内LANだけで使用してください。共有ネットワークやインターネット越しに公開する場合は、HTTPS対応のリバースプロキシまたはVPNを必須とし、Avatar Gatewayを直接公開しないでください。
 
-## 別のHermes Profileを使う（任意）
+
+## 👄音声合成OpenAI互換APIを読み上げに使う（任意）
+
+読み上げにはStyle-Bert-VITS2とOpenAI互換APIのどちらかを使えます。`AVATAR_GATEWAY_TTS_PROVIDER`で切り替え、既定はこれまでどおりのStyle-Bert-VITS2です。
+
+Style-Bert-VITS2のかわりに、[speech.cpp](https://github.com/nyosegawa/speech.cpp)の`speech serve`や本家OpenAIの`POST /v1/audio/speech`を使えます。提供元を`openai`へ変え、接続先と声を設定します。
+
+```env
+STYLEBERTVITS2_ENABLED=true
+AVATAR_GATEWAY_TTS_PROVIDER=openai
+OPENAI_TTS_BASE_URL=http://127.0.0.1:8080/
+OPENAI_TTS_API_KEY=
+OPENAI_TTS_MODEL=
+OPENAI_TTS_VOICE=none
+```
+
+`OPENAI_TTS_BASE_URL`には`/v1`を含めても含めなくても構いません。本家OpenAIを使う場合は`https://api.openai.com/v1`とAPIキーを指定します。
+
+`OPENAI_TTS_VOICE`は既定で`none`です。`none`または空の間は`voice`を送らないため、speech.cppのように`voice`が必須なサーバーでは、`ono_anna`など実際の声名へ変更してください。利用できる声は`GET /v1/models`で確認できます。
+
+`OPENAI_TTS_MODEL`が空なら、サーバーが保持している合成モデルをそのまま使います。`OPENAI_TTS_SPEED`、`OPENAI_TTS_INSTRUCTIONS`、`OPENAI_TTS_LANGUAGE`は空なら送信しません。speech.cppは受け付けない項目を無視せずエラーにするため、モデルが対応するものだけ設定してください。
+
+## 👂OpenAI互換APIを音声認識に使う（任意）
+
+ローカルfaster-whisperのかわりに、[speech.cpp](https://github.com/nyosegawa/speech.cpp)や本家OpenAIの`POST /v1/audio/transcriptions`を使えます。`AVATAR_GATEWAY_STT_PROVIDER=openai`にすると、Whisperモデルの導入コマンドは不要です。
+
+```env
+FASTER_WHISPER_ENABLED=true
+AVATAR_GATEWAY_STT_PROVIDER=openai
+OPENAI_STT_BASE_URL=http://127.0.0.1:8080/
+OPENAI_STT_API_KEY=
+OPENAI_STT_MODEL=
+OPENAI_STT_LANGUAGE=ja
+OPENAI_STT_RESPONSE_FORMAT=json
+```
+
+speech.cppはWAVしか受け取らないため、ブラウザがWebMやMP4で録音した音声は、送信前に16kHzモノラルのWAVへ変換します。変換には`faster-whisper`が同梱する`av`を使うため、追加の導入は必要ありません。
+
+`OPENAI_STT_RESPONSE_FORMAT`に`verbose_json`を指定すると、サーバーが返す言語と長さも受け取ります。固有名詞を認識させたい場合は`OPENAI_STT_PROMPT`へ書きます（対応モデルのみ）。
+
+## 🥷別のHermes Profileを使う（任意）
 
 Hermes Profileは、ペルソナ、記憶、会話履歴、モデル、SkillなどをProfileごとに分けて管理する仕組みです。既定Profileだけを使う場合、この設定は不要です。
 
@@ -648,12 +675,12 @@ hermes profile list
 ```env
 HERMES_BASE_URL=http://127.0.0.1:8642/p/ivy/v1
 HERMES_API_KEY=ivyのAPI_SERVER_KEY
-HERMES_IMAGE_CACHE_DIR=~/.hermes/profiles/ivy/cache/images
+HERMES_IMAGE_CACHE_DIR=~/.hermes/profiles/ivy/cache/generated/images/
 ```
 
 `HERMES_BASE_URL`には末尾の`/v1`まで含め、Profile名は`hermes profile list`に表示された名前をそのまま使用します。Profileごとに`API_SERVER_KEY`が異なる場合は、`HERMES_API_KEY`も切替先に合わせてください。生成画像を正しく表示するため、`HERMES_IMAGE_CACHE_DIR`も一緒に変更します。
 
-Hermesを標準の`~/.hermes`以外へ配置している場合は、`HERMES_IMAGE_CACHE_DIR`の先頭を実際の`HERMES_HOME`へ置き換えます。例えば`HERMES_HOME=/srv/hermes`なら、`ivy`の画像ディレクトリは`/srv/hermes/profiles/ivy/cache/images`です。
+Hermesを標準の`~/.hermes`以外へ配置している場合は、`HERMES_IMAGE_CACHE_DIR`の先頭を実際の`HERMES_HOME`へ置き換えます。例えば`HERMES_HOME=/srv/hermes`なら、`ivy`の画像ディレクトリは`/srv/hermes/profiles/ivy/cache/generated/images`です。
 
 名前付きProfileの`/p/<Profile名>/v1`を使うには、Hermesの既定Gatewayで`gateway.multiplex_profiles: true`が有効になり、そのProfileが共有Gatewayから提供されている必要があります。Hermes側でこの設定やProfileを変更した場合は、Hermes Gatewayも再起動してください。
 
@@ -675,7 +702,7 @@ curl http://127.0.0.1:8000/api/health
 
 既定Profileへ戻すときは、[初期設定](#1-初期設定)に記載した値へ戻し、Avatar Gatewayバックエンドを再起動してください。
 
-## GPUで音声認識を実行する（任意）
+## 👂GPU💪で音声認識を実行する（任意）
 
 音声認識は既定ではCPUを使います。NVIDIA GPUでfaster-whisperを実行する場合は、先に[faster-whisper公式のGPU要件](https://github.com/SYSTRAN/faster-whisper#gpu)に従って、対応するCUDA 12用cuBLASとcuDNN 9を用意してください。
 
@@ -750,11 +777,23 @@ HTTP 200と`"status": "ok"`が返れば、Avatar Gateway側からHermesへ到達
 HERMES_BASE_URL=http://192.168.2.168:8642/v1
 ```
 
+### Invalid host headerとブラウザに表示される
+
+LANモードでは、Hostヘッダー検査（`TrustedHostMiddleware`）が、アクセス先のIPアドレスやホスト名を許可リストと照合します。リストにない名前でアクセスすると、画面もAPIもHTTP 400と`Invalid host header`を返します。
+
+プロジェクト直下の`.env`を開き、`AVATAR_GATEWAY_ALLOWED_HOSTS`へブラウザのアドレス欄で使うサーバーのIPアドレスまたはホスト名を追記してください。例えば`http://linuxbox1:8000`で開くなら`linuxbox1`を指定します。ポート番号は含めません。
+
+```env
+AVATAR_GATEWAY_ALLOWED_HOSTS=127.0.0.1,localhost,192.168.2.168,linuxbox1
+```
+
+追記後はバックエンドを再起動し、同じURLで開き直してください。IPアドレスを指定していて、DHCPでサーバーのIPアドレスが変わった場合は、この設定も更新します。`/api/health`を確認するときも、ブラウザと同じIPアドレスまたはホスト名でアクセスしてください。
+
 ### 機能一覧で`Skill一覧APIエラー: 502`と表示される
 
-現状のHermesでは、`GET /v1/skills`が内部エラーになる組み合わせがあります。この場合、Avatar Gatewayの「機能一覧」は読み込めませんが、通常の会話やタスク実行には影響しません。Avatar Gateway側の接続設定を変更しても解消しません。
+一部のHermesバージョンでは、`GET /v1/skills`が内部エラーになり、Avatar Gatewayの「機能一覧」を読み込めないことがあります。通常の会話やタスク実行には影響しません。まずHermes側のログと使用中のバージョンを確認し、修正版が提供されていれば更新してください。
 
-Hermes側で修正する場合は、`gateway/platforms/api_server.py`の`APIServerAdapter._handle_skills`を確認してください。ここから呼び出す`tools.skills_tool._find_all_skills`の定義は`skip_disabled`だけを受け取るため、未対応の`include_editorial`を渡さないようにします。
+Hermes側のログに、`_find_all_skills`へ未対応の`include_editorial`引数を渡したエラーがある場合は、`gateway/platforms/api_server.py`の`APIServerAdapter._handle_skills`が暫定修正の対象です。使用中の`tools.skills_tool._find_all_skills`の定義を確認し、`skip_disabled`だけを受け取る版では、次のように呼び出します。既にこの形になっている場合は、この暫定修正は不要です。
 
 ```python
 skills = _sort_skills(
@@ -781,7 +820,7 @@ skills = _sort_skills(
 
 ### マイクをONにできない
 
-- バックエンドの依存関係を導入した後、`backend`ディレクトリで`.venv/bin/python -m scripts.download_whisper_model`を実行します。
+- ローカルのfaster-whisperを使う場合は、バックエンドの依存関係を導入した後、`backend`ディレクトリで`.venv/bin/python -m scripts.download_whisper_model`を実行します。OpenAI互換APIを使う場合、このモデル取得は不要です。
 - `.env`の`FASTER_WHISPER_LOCAL_FILES_ONLY=true`は変更せず、通常起動中の外部取得を禁止します。
 - LAN内の別端末からHTTPで開いている場合は、ブラウザの安全機能によってマイクが拒否されることがあります。[LAN内のHTTP接続でマイクを使う](#lan内のhttp接続でマイクを使う)を参照してください。Firefoxでは`media.devices.insecure.enabled`と`media.getusermedia.insecure.enabled`の両方が`true`か確認し、設定後にブラウザを再起動します。
 - 音声入力を使わない場合は`FASTER_WHISPER_ENABLED=false`にします。
@@ -805,6 +844,8 @@ Avatar Gatewayは、次のオープンソースソフトウェアを利用して
 - [FastAPI](https://github.com/fastapi/fastapi): バックエンドAPI
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper): 任意で利用する音声認識
 - [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2): 任意で連携する音声合成サービス
+- [speech.cpp](https://github.com/nyosegawa/speech.cpp): 任意で連携する音声合成・音声認識サービス
+- [@vladmandic/face-api](https://github.com/vladmandic/face-api): ウェブカメラ映像からの顔検出・顔照合
 
 各ソフトウェアには、それぞれのライセンスが適用されます。区分とライセンスの概要は[第三者ソフトウェアに関する表記](THIRD_PARTY_NOTICES.md)を確認してください。
 

@@ -51,9 +51,10 @@ class Settings:
     hermes_model: str = os.getenv("HERMES_MODEL", "hermes-agent")
     hermes_model_file: Path = PROJECT_ROOT / "runtime" / "hermes_model.json"
     daily_timezone: str = os.getenv("AVATAR_GATEWAY_TIMEZONE", "Asia/Tokyo").strip()
+    # 更新後のHermesの保存先を既定にし、旧版や別Profileは環境変数で指定します。
     hermes_image_cache_dir: Path = Path(os.getenv(
         "HERMES_IMAGE_CACHE_DIR",
-        "~/.hermes/cache/images",
+        "~/.hermes/cache/generated/images",
     )).expanduser()
     hermes_cron_dir: Path = Path(os.getenv("HERMES_CRON_DIR", "~/.hermes/cron")).expanduser()
     gaze_cron_job_name: str = os.getenv("AVATAR_GATEWAY_GAZE_CRON_JOB", "avatar-gateway-gaze").strip()
