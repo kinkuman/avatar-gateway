@@ -8,7 +8,59 @@ Avatar Gateway is a local conversation application that presents replies from He
 
 > New here? Start with the [Quick Start](QUICKSTART.en.md). It explains only what you need for your first conversation and defines technical terms as they appear.
 
-The application interface is currently in Japanese. This document describes the icons and includes the Japanese label when it is useful for finding a control.
+The application interface supports Japanese and English. Japanese is the default; you can change the display language in UI Settings.
+
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [1. Initial Configuration](#1-initial-configuration)
+    - [Date and Time Context for Conversations](#date-and-time-context-for-conversations)
+    - [Optional Speech Output](#optional-speech-output)
+        - [Optional OpenAI-Compatible Speech Output](#optional-openai-compatible-speech-output)
+        - [Voice for Hamuko](#voice-for-hamuko)
+        - [Style-Bert-VITS2 for RTX 50 Series (Optional)](#style-bert-vits2-for-rtx-50-series-optional)
+    - [Optional Microphone Input](#optional-microphone-input)
+        - [Optional OpenAI-Compatible Microphone Input](#optional-openai-compatible-microphone-input)
+- [2. Change the VRM (Optional)](#2-change-the-vrm-optional)
+- [3. Prepare the Frontend](#3-prepare-the-frontend)
+- [4. Start the Backend](#4-start-the-backend)
+    - [Conversation and Standard Views](#conversation-and-standard-views)
+    - [Microphone Input](#microphone-input)
+        - [Using the Microphone over HTTP on a LAN](#using-the-microphone-over-http-on-a-lan)
+    - [UI Settings](#ui-settings)
+        - [Changing the Display Language](#changing-the-display-language)
+        - [Adding a Translation](#adding-a-translation)
+        - [Interacting with the Avatar](#interacting-with-the-avatar)
+            - [Responsive Regions](#responsive-regions)
+        - [Adjusting Hit Areas](#adjusting-hit-areas)
+        - [Background Images](#background-images)
+    - [Starting a New Session](#starting-a-new-session)
+    - [Viewing Saved Conversations](#viewing-saved-conversations)
+    - [Viewing Hermes Skills and Toolsets](#viewing-hermes-skills-and-toolsets)
+    - [Speech Output](#speech-output)
+    - [Generated Images and 90-Day Retention](#generated-images-and-90-day-retention)
+    - [Stopping Speech or the Entire Task](#stopping-speech-or-the-entire-task)
+    - [Reconnecting to Active Work](#reconnecting-to-active-work)
+    - [Task Progress and Approval](#task-progress-and-approval)
+    - [Previewing VRMA Motions](#previewing-vrma-motions)
+    - [Editing the Motion Catalog](#editing-the-motion-catalog)
+    - [Camera Controls](#camera-controls)
+- [5. Start the Development Frontend (Optional)](#5-start-the-development-frontend-optional)
+- [6. Use from Another Device on the LAN](#6-use-from-another-device-on-the-lan)
+- [Use Another Hermes Profile (Optional)](#use-another-hermes-profile-optional)
+- [Run Speech Recognition on a GPU (Optional)](#run-speech-recognition-on-a-gpu-optional)
+    - [Change the Speech Recognition Model (Optional)](#change-the-speech-recognition-model-optional)
+- [Troubleshooting](#troubleshooting)
+    - [Cannot Connect to Hermes](#cannot-connect-to-hermes)
+    - [Skill list API error: 502 in the Resources Screen](#skill-list-api-error-502-in-the-resources-screen)
+    - [Text Works but Speech Does Not](#text-works-but-speech-does-not)
+    - [The VRM Is Not Displayed](#the-vrm-is-not-displayed)
+    - [The Microphone Cannot Be Enabled](#the-microphone-cannot-be-enabled)
+- [Security](#security)
+- [Major Open-Source Software](#major-open-source-software)
+- [Licenses](#licenses)
+- [Outside the Scope of the Initial Release](#outside-the-scope-of-the-initial-release)
 
 ## Features
 
