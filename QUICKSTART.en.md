@@ -221,6 +221,14 @@ http://127.0.0.1:8000
 
 An address tells the browser where to connect.
 
+The interface starts in Japanese by default. Before sending your first message, you can switch it to English:
+
+1. Select the gear icon. Its Japanese label is `設定` (Settings).
+2. At the top of the settings panel, find `表示言語 / Language` and choose `English`.
+3. Select the gear icon again, now labeled `Back to conversation`, to return to the text input box.
+
+The display changes immediately, and the choice is saved in this browser. It does not change the language Hermes replies in. See [Changing the Display Language](README.en.md#changing-the-display-language) for server defaults and additional translations.
+
 When you see the avatar and the text input box, send a short message such as:
 
 ```text

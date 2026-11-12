@@ -269,19 +269,21 @@ Open the following address in Firefox or a Chromium-based browser:
 http://127.0.0.1:8000
 ```
 
+The interface starts in Japanese by default. To use English, select the gear icon (`設定`), find `表示言語 / Language` at the top of Settings, and choose `English`. The controls described below use their English labels. Existing screenshots may show Japanese labels. See [Changing the Display Language](#changing-the-display-language) for saved defaults and other languages.
+
 The first speech playback is started by a user send action so that the browser can allow audio. If Firefox still blocks sound, allow audio autoplay from the permission control near the address bar.
 
 ### Conversation and Standard Views
 
 ![Switch between Conversation and Standard views](docs/images/screen_change.png)
 
-Select the person-in-a-frame icon labeled `会話画面へ切り替える` to enter Conversation view, which fills the browser with the avatar. It shows only the latest question and reply in outlined subtitle-style text. Microphone controls, stop controls, current task state, errors, and approval requests remain available. Select `文字入力` to open the text box. In text input, press `Enter` for a new line or `Ctrl+Enter` (`⌘+Enter` on macOS) to send.
+Select the person-in-a-frame icon labeled `Switch to conversation view` to enter Conversation view, which fills the browser with the avatar. It shows only the latest question and reply in outlined subtitle-style text. Microphone controls, stop controls, current task state, errors, and approval requests remain available. Select `Text input` to open the text box. In text input, press `Enter` for a new line or `Ctrl+Enter` (`⌘+Enter` on macOS) to send.
 
 ![Conversation view](docs/images/conversation_mode.png)
 
-Select the split-screen icon labeled `標準画面へ切り替える` to return to Standard view for full history, sessions, Hermes resources, and settings. Changing views keeps the current session, active conversation, and microphone state.
+Select the split-screen icon labeled `Switch to standard view` to return to Standard view for full history, sessions, Hermes resources, and settings. Changing views keeps the current session, active conversation, and microphone state.
 
-The Standard view actions are, from left to right: change view, session history, Hermes resources, settings, and new session. Hover over an icon to see its Japanese label; assistive technology receives the same label.
+The Standard view actions are, from left to right: change view, session history, Hermes features, model selection, settings, and new session. Hover over an icon to see its label in the selected display language; assistive technology receives the same label.
 
 ![Standard view icons](docs/images/icons.png)
 
@@ -295,11 +297,11 @@ During a conversation, the upper-left status shows actual stages reported by Her
 
 ![Microphone controls](docs/images/mic.png)
 
-Select `マイクON` and allow microphone access in the browser. When `聞き取り待機中` appears, speak normally. After 0.8 seconds of silence by default, Avatar Gateway ends the recording, transcribes it with faster-whisper on Linux, and sends the text to Hermes.
+Select `Mic ON` and allow microphone access in the browser. When `Waiting for speech` appears, speak normally. After 0.8 seconds of silence by default, Avatar Gateway ends the recording, transcribes it with faster-whisper on Linux, and sends the text to Hermes.
 
-The microphone remains ready for the next utterance until you select `マイクOFF` or close the page. If you begin speaking while the avatar is talking or Hermes is working, Avatar Gateway stops the current task and speech so that the new utterance can take priority.
+The microphone remains ready for the next utterance until you select `Mic OFF` or close the page. If you begin speaking while the avatar is talking or Hermes is working, Avatar Gateway stops the current task and speech so that the new utterance can take priority.
 
-The browser requests echo cancellation. If speaker audio is detected as your voice, raise the speech-detection sensitivity value in Settings or use headphones. In the `音声` section of Settings, each browser can save:
+The browser requests echo cancellation. If speaker audio is detected as your voice, raise the speech-detection sensitivity value in Settings or use headphones. In the `Audio` section of Settings, each browser can save:
 
 - The silence duration used to decide that speech has ended, from 0.6 to 2.0 seconds
 - Speech-detection sensitivity; raise the value for noisy rooms and lower it when your voice is not detected
@@ -351,8 +353,9 @@ These settings weaken browser security restrictions. When they are no longer nee
 
 ![UI settings](docs/images/setting.png)
 
-Select the gear icon labeled `設定` to configure:
+Select the gear icon labeled `Settings` to configure:
 
+- Display language: Japanese, English, or an added translation
 - Whether motion preview buttons are shown
 - Whether camera instructions are shown over the avatar
 - Avatar interaction, enabled body regions, and model-specific hit areas
@@ -360,17 +363,50 @@ Select the gear icon labeled `設定` to configure:
 - Camera position, target, and distance
 - VRM background and fitting mode
 
-Motion buttons are hidden during normal use. After adjusting the camera, select `現在位置を保存` to remember it. Select `自動調整へ戻す` to return to the full-body position calculated when the model loaded.
+Motion buttons are hidden during normal use. After adjusting the camera, select `Save current view` to remember it. Select `Reset to automatic` to return to the full-body position calculated when the model loaded.
 
-Screen changes are saved in the current browser and remain after reloading the page. `ブラウザ設定を初期化` resets only this browser.
+Screen changes are saved in the current browser and remain after reloading the page. `Reset browser settings` resets only this browser.
 
-To use the current settings as defaults for new browsers, select `現在値をサーバー初期値へ保存`. Existing settings in other browsers are not changed. Secrets and server-specific paths are not editable here.
+To use the current settings as defaults for new browsers, select `Use current settings as server defaults`. Existing settings in other browsers are not changed. Secrets and server-specific paths are not editable here.
+
+#### Changing the Display Language
+
+At the top of Settings, use `表示言語 / Language` to choose `日本語` or `English`. Buttons, descriptions, status labels, and fixed application notices switch immediately. The choice is saved in the current browser and remains after reloading the page. The bilingual selector label helps you find the control even if you cannot read the selected language.
+
+Changing the display language does not translate conversation history, change the language Hermes replies in, or rewrite your saved approval speech text. Date and number formatting remains unchanged.
+
+The language priority is:
+
+1. The language selected in this browser.
+2. The `language` value in `config/ui.json`, used as the server default.
+3. Japanese (`ja`) if no language is specified.
+
+To use your selection as the initial language for new browsers, select `Use current settings as server defaults` at the bottom of Settings and confirm. This saves the other current UI settings too. Existing selections in other browsers are not changed. `Reset browser settings` clears this browser's UI overrides and returns to the server defaults. You do not need a language entry in `.env` or a `config.yaml` file.
+
+#### Adding a Translation
+
+Bundled translations are stored in `assets/locales/ja.json` and `assets/locales/en.json`. These JSON files are the source of truth for UI text, including fixed notices and errors returned by the backend. Japanese comments in the source code explain the conditions and intent of the code; they are not a second copy of the display text.
+
+As with VRM models and backgrounds, place your own translations under `local-assets/`. For example, run these commands from the Avatar Gateway folder to start an Indonesian translation:
+
+```bash
+mkdir -p local-assets/locales
+cp assets/locales/en.json local-assets/locales/id.json
+```
+
+1. Open `id.json` in a text editor and change `_meta.name` to `Bahasa Indonesia`. This name appears in the language selector.
+2. Keep keys such as `settings.title` unchanged and translate the English text on the right. Preserve placeholders such as `{{count}}` and `{{status}}`, along with file paths and configuration names. We recommend keeping the bilingual `表示言語 / Language` text for `settings.language` so the selector stays easy to find.
+3. Save valid JSON, then reload the browser page. Select `Bahasa Indonesia` from the language list in Settings. Adding or editing only translation JSON files requires neither a frontend rebuild nor a backend restart.
+
+Additional language files in `assets/locales/` are also recognized. If both directories contain the same language and key, the text in `local-assets/locales/` takes priority. To customize only part of the bundled English translation, create `local-assets/locales/en.json` with `_meta.name` and just the keys you want to replace.
+
+For a partial override of a bundled language, unchanged keys keep their bundled translations. Other missing translations fall back to Japanese. Invalid JSON files are skipped and reported in the backend logs. Entries whose placeholders differ from the Japanese resource are ignored. If a saved language is no longer available, the interface falls back to Japanese.
 
 #### Interacting with the Avatar
 
 ![Avatar interaction mode](docs/images/fureai.png)
 
-Select `ふれあい` on the avatar screen to switch from camera controls to interaction mode. You can instead hold the Space key outside the text field to enable it temporarily.
+Select `Touch` on the avatar screen to switch from camera controls to interaction mode. You can instead hold the Space key outside the text field to enable it temporarily.
 
 ##### Responsive Regions
 
@@ -378,7 +414,7 @@ Select `ふれあい` on the avatar screen to switch from camera controls to int
 
 The head and hands respond by default. Ears and tail can be enabled in Settings. Clicking or tapping a region produces a physical reaction, and repeated touches are grouped and reported with their count. Dragging across a region is treated as stroking; the body part follows slightly and returns when released.
 
-`反動だけテスト` is a debugging feature retained for testing avatar reactions. Leave it off during normal use.
+`Test recoil only` is a debugging feature retained for testing avatar reactions. Leave it off during normal use.
 
 New interactions are not sent while Hermes is responding, running a tool, waiting for approval, or processing audio. Draft text in the normal input field is preserved.
 
@@ -411,13 +447,13 @@ Place personal PNG, JPEG, or WebP files under:
 local-assets/backgrounds/
 ```
 
-No backend restart is required. In Settings, select `画像一覧を再読込`, then select the filename. A local file with the same name as a bundled background replaces it without modifying the product file.
+No backend restart is required. In Settings, select `Reload image list`, then select the filename. A local file with the same name as a bundled background replaces it without modifying the product file.
 
 ### Starting a New Session
 
 ![Start a new session](docs/images/new_session.png)
 
-Select the speech-bubble-plus icon labeled `新しいセッション`. After confirmation, Avatar Gateway marks the current Hermes session as completed and shows an empty conversation. The session and its messages remain in Hermes history. A new Hermes session is created when the next message is sent.
+Select the speech-bubble-plus icon labeled `New session`. After confirmation, Avatar Gateway marks the current Hermes session as completed and shows an empty conversation. The session and its messages remain in Hermes history. A new Hermes session is created when the next message is sent.
 
 The action is disabled while Hermes is working, waiting for approval, synthesizing speech, or speaking. If the completion request fails, the current conversation remains visible.
 
@@ -425,7 +461,7 @@ The action is disabled while Hermes is working, waiting for approval, synthesizi
 
 ![Saved sessions](docs/images/old_session.png)
 
-Select the arrow-around-a-clock icon labeled `セッション履歴`. Avatar Gateway lists only sessions that it created, ordered by most recent update. It initially loads 50 entries.
+Select the arrow-around-a-clock icon labeled `Session history`. Avatar Gateway lists only sessions that it created, ordered by most recent update. It initially loads 50 entries.
 
 ![Session history](docs/images/session_history.png)
 
@@ -433,19 +469,19 @@ Selecting an entry only previews its official history. It does not change the ac
 
 The details include message count, tool count, input, output and reasoning tokens, API calls, cost when available, and the parent session. Statistics not recorded by Hermes are shown as zero or unknown.
 
-For a completed session that is not currently open, `この履歴を削除` permanently deletes its conversation history from the Hermes SessionDB after confirmation. This cannot be undone. The backend refuses to delete an active session.
+For a completed session that is not currently open, `Delete this history` permanently deletes its conversation history from the Hermes SessionDB after confirmation. This cannot be undone. The backend refuses to delete an active session.
 
 ### Viewing Hermes Skills and Toolsets
 
 ![Hermes Skills and Toolsets](docs/images/skill_and_tools.png)
 
-Select the four-tile icon labeled `機能一覧` to view:
+Select the four-tile icon labeled `Features` to view:
 
 - Enabled Toolsets and the tool names they expose
 - Configured Toolsets that are disabled or incomplete
 - Available Skill names, categories, and descriptions
 
-This screen is read-only. Change Skill and Toolset configuration in Hermes, then select `再読込`.
+This screen is read-only. Change Skill and Toolset configuration in Hermes, then select `Reload`.
 
 ### Speech Output
 
@@ -465,8 +501,8 @@ Save any image you want to keep while it is still available. After expiration, t
 
 While Hermes is generating, audio is being prepared, or speech is playing, two controls are available.
 
-- `読み上げ停止` stops speech for the current reply without stopping Hermes, tools, approvals, or text generation. Speech is enabled again for the next message.
-- The red `作業を中断` control stops both the current Hermes task and its speech.
+- `Stop speech` stops speech for the current reply without stopping Hermes, tools, approvals, or text generation. Speech is enabled again for the next message.
+- The red `Stop task` control stops both the current Hermes task and its speech.
 
 Text already received remains in the conversation. A user-requested stop is not displayed as an audio error.
 
@@ -486,10 +522,10 @@ When Hermes pauses for approval of a risky action, a yellow panel displays its e
 
 ![Approve or deny a task](docs/images/approval.png)
 
-- `今回だけ許可`: allow only the current request; normally choose this
-- `拒否`: deny the current request
-- `このセッション中は許可`: allow a broader class of similar actions during this session
-- `今後も許可`: may affect later Runs and requires an additional confirmation
+- `Allow once`: allow only the current request; normally choose this
+- `Deny`: deny the current request
+- `Allow for this session`: allow a broader class of similar actions during this session
+- `Always allow`: may affect later Runs and requires an additional confirmation
 
 Buttons are disabled while an approval response is being sent. Resolved or expired requests are marked accordingly.
 
@@ -501,7 +537,7 @@ Finished VRMA files are bundled under `assets/motions/`. No conversion or genera
 
 The bundled VRMA files are provided under CC0. Attribution is not required, and use, modification, redistribution, and commercial use are unrestricted. See the [Bundled Asset Licenses](ASSET_LICENSES.en.md).
 
-Enable motion preview buttons in Settings to play registered motions. You can also drag and drop a `.vrma` file onto the avatar in Standard view, or select `VRMAを試す`. The temporary file is played only in the browser, is not uploaded, and is forgotten on reload.
+Enable motion preview buttons in Settings to play registered motions. You can also drag and drop a `.vrma` file onto the avatar in Standard view, or select `Try a VRMA`. The temporary file is played only in the browser, is not uploaded, and is forgotten on reload.
 
 During a conversation, registered motions and expressions change automatically to match the Hermes reply.
 
@@ -563,7 +599,7 @@ Right drag: rotate the camera
 Touch: one finger rotates; two fingers zoom and move
 ```
 
-Select `カメラをリセット` to return to the automatically calculated position.
+Select `Reset camera` to return to the automatically calculated position.
 
 ## 5. Start the Development Frontend (Optional)
 
@@ -630,7 +666,7 @@ If Hermes uses a location other than `~/.hermes`, replace the start of the image
 
 The `/p/<profile-name>/v1` route requires `gateway.multiplex_profiles: true` on the default Hermes Gateway, and the Profile must be served by that shared Gateway. Restart Hermes Gateway after changing its Profile or multiplex settings.
 
-After saving `.env`, restart the Avatar Gateway backend, reload the browser, and select the speech-bubble-plus icon labeled `新しいセッション` to begin a new session. Conversation history is separate for each Profile.
+After saving `.env`, restart the Avatar Gateway backend, reload the browser, and select the speech-bubble-plus icon labeled `New session` to begin a new session. Conversation history is separate for each Profile.
 
 Check the connection at:
 
@@ -723,7 +759,7 @@ Point the Avatar Gateway `.env` at the same address:
 HERMES_BASE_URL=http://192.168.2.168:8642/v1
 ```
 
-### `Skill一覧APIエラー: 502` in the Resources Screen
+### `Skill list API error: 502` in the Resources Screen
 
 Some current Hermes revisions return an internal error for `GET /v1/skills`. The Avatar Gateway resources screen cannot load in this case, but normal conversations and task execution still work. Changing Avatar Gateway connection settings does not fix this Hermes-side problem.
 
@@ -735,7 +771,7 @@ skills = _sort_skills(
 )
 ```
 
-Restart Hermes Gateway and confirm that `GET /v1/skills` succeeds, then select `再読込` in Avatar Gateway. Prefer the upstream implementation after an official fix is merged.
+Restart Hermes Gateway and confirm that `GET /v1/skills` succeeds, then select `Reload` in Avatar Gateway. Prefer the upstream implementation after an official fix is merged.
 
 ### Text Works but Speech Does Not
 
