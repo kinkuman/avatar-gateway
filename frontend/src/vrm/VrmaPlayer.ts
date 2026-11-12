@@ -1,4 +1,5 @@
 // 公式VRMAローダーとAnimationMixerを使い、主動作の再生と待機姿勢への復帰を管理します。
+import { t } from '../i18n'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMHumanBoneList, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm'
@@ -121,7 +122,8 @@ export class VrmaPlayer {
       }
     } catch (cause) {
       if (currentRequest !== this.requestId) return
-      const message = cause instanceof Error ? cause.message : '不明なVRMA読み込みエラー'
+      // 通知する状態・条件: 不明なVRMA読み込みエラー。
+      const message = cause instanceof Error ? cause.message : t("motion.errors.unknownLoad")
       this.onStatus({ state: 'error', name, message })
     }
   }
@@ -221,7 +223,7 @@ export class VrmaPlayer {
     const gltf = await this.loader.loadAsync(url)
     const animations = gltf.userData.vrmAnimations as VRMAnimation[] | undefined
     const animation = animations?.[0]
-    if (!animation) throw new Error('VRMC_vrm_animationを含むアニメーションが見つかりません')
+    if (!animation) throw new Error(t("motion.errors.animationMissing"))
     const clip = createVRMAnimationClip(animation, this.vrm)
     const detectedStatic = clip.duration <= 0.0001 || clip.tracks.every((track) => track.times.length <= 1)
     const isStatic = playback === 'pose' || (playback === 'auto' && detectedStatic)

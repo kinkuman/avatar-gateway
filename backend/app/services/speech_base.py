@@ -1,5 +1,7 @@
 """音声合成と音声認識の各提供元が共有する、例外と一時音声の保存を定義します。"""
 
+from .messages import UiMessageError, message_ref
+
 import asyncio
 import sys
 import wave
@@ -24,11 +26,11 @@ _GAP_LIMIT_MS = 400
 _GAP_KEEP_MS = 180
 
 
-class TtsError(RuntimeError):
+class TtsError(UiMessageError):
     """TTS接続の失敗を会話自体の失敗と区別するための例外です。"""
 
 
-class TranscriptionError(RuntimeError):
+class TranscriptionError(UiMessageError):
     """音声デコードや推論の失敗を、内部情報を含まないAPIエラーへまとめます。"""
 
 
@@ -307,5 +309,6 @@ async def store_utterance_audio(audio: bytes, config: Settings) -> tuple[str, Pa
             cleanup_cancelled_audio(None)
         raise
     except OSError as exc:
-        raise TtsError(f"音声ファイルを保存できません: {exc}") from exc
+        # 音声ファイルの保存失敗を通知します
+        raise TtsError(message_key='gateway.speech.audioSaveFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
     return utterance_id, output

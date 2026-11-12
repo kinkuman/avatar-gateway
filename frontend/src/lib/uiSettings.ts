@@ -19,6 +19,7 @@ export const UI_SETTINGS_STORAGE_KEY = 'avatar-gateway.ui-settings'
 
 export const fallbackUiSettings: UiSettings = {
   schema_version: 1,
+  language: 'ja',
   cast_off_enabled: false,
   show_motion_controls: false,
   show_camera_help: true,
@@ -49,6 +50,12 @@ export const fallbackUiSettings: UiSettings = {
     silence_ms: 800,
     speech_threshold: 0.02,
   },
+}
+
+/** 言語ファイル名として扱えるコードだけを保存し、未知の追加言語も受け入れます。 */
+export function readLanguage(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length <= 64
+    && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value) ? value : undefined
 }
 
 const backgroundSuffixes = ['.jpg', '.jpeg', '.png', '.webp']
@@ -230,6 +237,7 @@ function readCamera(value: unknown): UiCameraSettings | null | undefined {
   return { position, target }
 }
 
+/** 設定済みの発話文は翻訳せず、一文として保存できる形だけを検証します。 */
 function readApprovalPrompt(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim().replace(/\s+/g, ' ')
@@ -269,6 +277,7 @@ export function readUiSettings(value: unknown): UiSettings | null {
   ) return null
   return {
     schema_version: 1,
+    language: readLanguage(item.language) ?? 'ja',
     // 旧い設定ファイルには存在しないため、表示しない安全側を採用します。
     cast_off_enabled: item.cast_off_enabled === true,
     show_motion_controls: item.show_motion_controls,
@@ -291,6 +300,8 @@ export function readUiSettingsOverrides(storage: Storage): UiSettingsOverrides {
     if (!value || typeof value !== 'object') return {}
     const item = value as Record<string, unknown>
     const overrides: UiSettingsOverrides = {}
+    const language = readLanguage(item.language)
+    if (language) overrides.language = language
     if (typeof item.show_motion_controls === 'boolean') overrides.show_motion_controls = item.show_motion_controls
     if (typeof item.show_camera_help === 'boolean') overrides.show_camera_help = item.show_camera_help
     if (

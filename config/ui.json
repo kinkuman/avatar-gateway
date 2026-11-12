@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "language": "ja",
   "cast_off_enabled": false,
   "show_motion_controls": false,
   "show_camera_help": true,

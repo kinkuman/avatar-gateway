@@ -1,5 +1,6 @@
 """ブラウザ音声をCPU版faster-whisperへ渡し、会話入力用の日本語テキストへ変換します。"""
 
+
 import asyncio
 from collections.abc import Callable
 from io import BytesIO
@@ -51,16 +52,18 @@ class FasterWhisperTranscriber:
     def _create_model(self) -> Any:
         """通常実行時だけ外部依存を読み込み、音声OFFのテストや運用を壊しません。"""
         if self._config.stt_local_files_only and not is_model_installed(self._config):
+            # Whisperモデルが未導入なら、導入手順を案内します。
             raise TranscriptionUnavailableError(
-                "Whisperモデルがインストールされていません。READMEの音声認識モデル導入手順を実行してください",
+                message_key='gateway.whisper.modelNotInstalled',
             )
         factory = self._model_factory
         if factory is None:
             try:
                 from faster_whisper import WhisperModel
             except ImportError as exc:
+                # 推論ライブラリがない場合に、音声入力を開始できない理由を知らせます。
                 raise TranscriptionUnavailableError(
-                    "faster-whisperがインストールされていません",
+                    message_key='gateway.whisper.dependencyMissing',
                 ) from exc
             factory = WhisperModel
 
@@ -83,8 +86,9 @@ class FasterWhisperTranscriber:
         except TranscriptionUnavailableError:
             raise
         except Exception as exc:
+            # faster-whisperモデルの読み込み失敗を通知します
             raise TranscriptionUnavailableError(
-                "faster-whisperモデルを読み込めません",
+                message_key='gateway.whisper.modelLoadFailed',
             ) from exc
 
     def _get_model(self) -> Any:
@@ -113,10 +117,12 @@ class FasterWhisperTranscriber:
         except TranscriptionUnavailableError:
             raise
         except Exception as exc:
-            raise TranscriptionError("音声を文字起こしできません") from exc
+            # 文字起こし処理の失敗を、通常の会話エラーと区別します。
+            raise TranscriptionError(message_key='gateway.whisper.transcriptionFailed') from exc
 
         if not text:
-            raise NoSpeechDetectedError("発話を認識できませんでした")
+            # 音声から発言が得られない場合、空の会話を送信させません。
+            raise NoSpeechDetectedError(message_key='gateway.whisper.noSpeech')
         duration = getattr(info, "duration", None)
         language = getattr(info, "language", None)
         return {

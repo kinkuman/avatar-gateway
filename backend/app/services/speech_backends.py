@@ -1,5 +1,7 @@
 """設定で選んだ提供元へ、音声合成と音声認識の呼び出しを振り分けます。"""
 
+from .messages import UiMessageError, message_payload
+
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +40,8 @@ OPENAI_PROVIDER = "openai"
 TTS_PROVIDERS = ("stylebertvits2", OPENAI_PROVIDER)
 STT_PROVIDERS = ("faster_whisper", OPENAI_PROVIDER)
 
-_MODEL_MISSING_NOTICE = "Whisperモデルが未導入です。READMEの音声認識モデル導入手順を実行してください。"
+# 認識モデルが未導入の場合、導入手順を案内します。
+_MODEL_MISSING_NOTICE = UiMessageError(message_key='gateway.whisper.modelMissingNotice')
 
 
 async def synthesize(
@@ -90,5 +93,5 @@ def transcription_status(config: Settings) -> dict[str, Any]:
         "model": config.stt_model,
         "device": config.stt_device,
         "compute_type": config.stt_compute_type,
-        "message": None if not config.stt_enabled or installed else _MODEL_MISSING_NOTICE,
+        **({"message": None} if not config.stt_enabled or installed else message_payload(_MODEL_MISSING_NOTICE)),
     }

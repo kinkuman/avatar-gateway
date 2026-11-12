@@ -1,5 +1,7 @@
 """OpenAI互換の音声APIへ合成と認識を委ね、speech.cppなどのサーバーを利用します。"""
 
+from .messages import UiMessageError, message_ref
+
 import asyncio
 import base64
 import json
@@ -98,11 +100,13 @@ async def synthesize(
             headers=_authorization_headers(config.openai_tts_api_key),
         )
         if response.status_code >= 400:
+            # 利用者へ通知する条件: OpenAI互換TTS APIエラー (対象値)
             raise TtsError(
-                f"OpenAI互換TTS APIエラー ({response.status_code}): {_error_message(response)}",
+                message_key='gateway.openaiSpeech.apiError', message_params={'status': response.status_code, 'detail': _error_message(response)},
             )
     except httpx.HTTPError as exc:
-        raise TtsError(f"OpenAI互換TTSへ接続できません: {exc}") from exc
+        # OpenAI互換TTSへの接続失敗を通知します
+        raise TtsError(message_key='gateway.openaiSpeech.connectionFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
 
     return await store_utterance_audio(response.content, config)
 
@@ -183,7 +187,8 @@ async def iter_speech_pcm(
                 message = _error_message_from_bytes(await response.aread())
                 if response.status_code == 400 and _unsupported_stream(message):
                     raise SpeechStreamUnsupported(message)
-                raise TtsError(f"OpenAI互換TTS APIエラー ({response.status_code}): {message}")
+                # 利用者へ通知する条件: OpenAI互換TTS APIエラー (対象値)
+                raise TtsError(message_key='gateway.openaiSpeech.apiError', message_params={'status': response.status_code, 'detail': message})
             rate = _sample_rate(response.headers)
             yield ("rate", rate)
             async for kind, pcm in _iter_sse_pcm(response, rate):
@@ -193,7 +198,8 @@ async def iter_speech_pcm(
     except TtsError:
         raise
     except httpx.HTTPError as exc:
-        raise TtsError(f"OpenAI互換TTSへ接続できません: {exc}") from exc
+        # OpenAI互換TTSへの接続失敗を通知します
+        raise TtsError(message_key='gateway.openaiSpeech.connectionFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
 
 
 async def _iter_sse_pcm(
@@ -232,7 +238,8 @@ async def _iter_sse_pcm(
                 if audio_match is None:
                     if '"error"' in pending:
                         message = _error_message_from_bytes(pending.encode("utf-8"))
-                        raise TtsError(f"OpenAI互換TTS APIエラー: {message}")
+                        # 利用者へ通知する条件: OpenAI互換TTS APIエラー
+                        raise TtsError(message_key='gateway.openaiSpeech.streamApiError', message_params={'detail': message})
                     keep = 32
                     if len(pending) > keep:
                         pending = pending[-keep:]
@@ -271,8 +278,9 @@ def to_wav(audio: bytes) -> bytes:
     try:
         import av
     except ImportError as exc:
+        # 利用者へ通知する条件: 録音をWAVへ変換するavがインストールされていません
         raise TranscriptionUnavailableError(
-            "録音をWAVへ変換するavがインストールされていません",
+            message_key='gateway.openaiSpeech.avMissing',
         ) from exc
 
     destination = BytesIO()
@@ -295,7 +303,8 @@ def to_wav(audio: bytes) -> bytes:
                 sink.mux(stream.encode(resampled))
             sink.mux(stream.encode(None))
     except Exception as exc:
-        raise TranscriptionError("録音を音声データへ変換できません") from exc
+        # 利用者へ通知する条件: 録音を音声データへ変換できません
+        raise TranscriptionError(message_key='gateway.openaiSpeech.recordingConversionFailed') from exc
     return destination.getvalue()
 
 
@@ -342,14 +351,17 @@ class OpenAiTranscriber:
             try:
                 decoded = response.json()
             except ValueError as exc:
-                raise TranscriptionError("音声認識サーバーの応答を解釈できません") from exc
+                # 利用者へ通知する条件: 音声認識サーバーの応答を解釈できません
+                raise TranscriptionError(message_key='gateway.openaiSpeech.transcriptionResponseFormat') from exc
             if not isinstance(decoded, dict):
-                raise TranscriptionError("音声認識サーバーの応答を解釈できません")
+                # 利用者へ通知する条件: 音声認識サーバーの応答を解釈できません
+                raise TranscriptionError(message_key='gateway.openaiSpeech.transcriptionResponseFormat')
             payload = decoded
             text = str(payload.get("text") or "").strip()
 
         if not text:
-            raise NoSpeechDetectedError("発話を認識できませんでした")
+            # 音声から発言が得られない場合、空の会話を送信させません。
+            raise NoSpeechDetectedError(message_key='gateway.openaiSpeech.noSpeech')
         language = payload.get("language")
         duration = payload.get("duration")
         return {
@@ -375,14 +387,17 @@ class OpenAiTranscriber:
                     headers=_authorization_headers(self._config.openai_stt_api_key),
                 )
         except httpx.HTTPError as exc:
-            raise TranscriptionUnavailableError("音声認識サーバーへ接続できません") from exc
+            # 音声認識サーバーへの接続失敗を通知します
+            raise TranscriptionUnavailableError(message_key='gateway.openaiSpeech.transcriptionConnectionFailed') from exc
 
         if response.status_code in {404, 503}:
+            # 利用者へ通知する条件: 音声認識モデルを利用できません
             raise TranscriptionUnavailableError(
-                f"音声認識モデルを利用できません: {_error_message(response)}",
+                message_key='gateway.openaiSpeech.transcriptionModelUnavailable', message_params={'detail': _error_message(response)},
             )
         if response.status_code >= 400:
+            # 文字起こし処理の失敗を、通常の会話エラーと区別します。
             raise TranscriptionError(
-                f"音声を文字起こしできません: {_error_message(response)}",
+                message_key='gateway.openaiSpeech.transcriptionFailed', message_params={'detail': _error_message(response)},
             )
         return self._present(response, wav)

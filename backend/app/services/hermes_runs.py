@@ -1,5 +1,7 @@
 """Hermes Runを単独購読し、安全化したイベントを再接続可能な形で一時保存します。"""
 
+from .messages import UiMessageError, message_payload
+
 import asyncio
 import time
 from collections.abc import AsyncIterator, Callable
@@ -88,7 +90,8 @@ class HermesRunCoordinator:
             "cancelled",
         }:
             return str(value)
-        raise HermesError("Hermes Run状態APIのstatusが正しくありません")
+        # Hermes Run状態APIのstatusの不正を通知します
+        raise HermesError(message_key='gateway.runs.invalidStatus')
 
     @staticmethod
     def _terminal_event(status: str) -> dict[str, Any] | None:
@@ -96,7 +99,7 @@ class HermesRunCoordinator:
         if status == "completed":
             return {"type": "assistant.completed", "output": "", "recovered": True}
         if status == "failed":
-            return {"type": "agent.failed", "message": "Hermes Runは失敗しました", "recovered": True}
+            return {"type": "agent.failed", **message_payload(UiMessageError(message_key='gateway.runs.recoveredRunFailed'), 'message'), "recovered": True}
         if status == "cancelled":
             return {"type": "agent.stopped", "recovered": True}
         return None
@@ -163,7 +166,8 @@ class HermesRunCoordinator:
                 "usage": raw.get("usage") if isinstance(raw.get("usage"), dict) else {},
             }
         if event_type == "run.failed":
-            return {"type": "agent.failed", "message": str(raw.get("error") or "Runに失敗しました")}
+            # 上流の未知の診断は原文を保ち、診断がない場合だけ既定の失敗通知を使います。
+            return {"type": "agent.failed", **message_payload(str(raw["error"]) if raw.get("error") else UiMessageError(message_key='gateway.runs.failed'))}
         if event_type == "run.cancelled":
             return {"type": "agent.stopped"}
         return None
@@ -180,7 +184,8 @@ class HermesRunCoordinator:
             self._records.pop(record.run_id, None)
             if len(self._records) < _MAX_ACTIVE_RECORDS:
                 return
-        raise HermesError("実行中または保存中のRunが多すぎます")
+        # 利用者へ通知する条件: 実行中または保存中のRunが多すぎます
+        raise HermesError(message_key='gateway.runs.tooManyRuns')
 
     async def _append_event(self, record: _RunRecord, event: dict[str, Any]) -> None:
         """連番を付けて保存し、待機中の全ブラウザ購読者を起こします。"""
@@ -239,12 +244,12 @@ class HermesRunCoordinator:
             raise
         except HermesError as exc:
             if not record.finished:
-                await self._append_event(record, {"type": "agent.failed", "message": str(exc)})
+                await self._append_event(record, {"type": "agent.failed", **message_payload(exc)})
         finally:
             if not record.finished:
                 await self._append_event(
                     record,
-                    {"type": "agent.failed", "message": "Hermes Runイベントが完了前に終了しました"},
+                    {"type": "agent.failed", **message_payload(UiMessageError(message_key='gateway.runs.eventsEndedEarly'), 'message')},
                 )
 
     @staticmethod
@@ -294,7 +299,7 @@ class HermesRunCoordinator:
                     record,
                     {
                         "type": "agent.failed",
-                        "message": "Hermes側でRun状態を確認できなくなりました",
+                        **message_payload(UiMessageError(message_key='gateway.runs.statusUnavailable'), 'message'),
                         "recovered": True,
                     },
                 )
@@ -308,7 +313,7 @@ class HermesRunCoordinator:
                     record,
                     {
                         "type": "agent.failed",
-                        "message": "回収したHermes Runのセッションが一致しません",
+                        **message_payload(UiMessageError(message_key='gateway.runs.recoveredSessionMismatch'), 'message'),
                         "recovered": True,
                     },
                 )
@@ -321,7 +326,7 @@ class HermesRunCoordinator:
                     record,
                     {
                         "type": "agent.failed",
-                        "message": "Hermes側のRun状態を解釈できません",
+                        **message_payload(UiMessageError(message_key='gateway.runs.statusUnrecognized'), 'message'),
                         "recovered": True,
                     },
                 )
@@ -367,7 +372,8 @@ class HermesRunCoordinator:
             state = await client.get_run(run_id)
             session_id = state.get("session_id")
             if not isinstance(session_id, str):
-                raise HermesSessionNotFoundError("Avatar GatewayのRunが見つかりません")
+                # Avatar GatewayのRunが見つからない状態を通知します
+                raise HermesSessionNotFoundError(message_key='gateway.hermesClient.runNotFound')
             # Session取得の所有ID検証を再利用し、他クライアントのRunを回収対象にしません。
             await client.get_session(session_id)
             status = self._normalize_run_status(state.get("status"))
@@ -449,7 +455,8 @@ class HermesRunCoordinator:
         """このプロセスが開始したRunだけを状態参照の対象にします。"""
         record = self._records.get(run_id)
         if record is None:
-            raise HermesSessionNotFoundError("Avatar GatewayのRunが見つかりません")
+            # Avatar GatewayのRunが見つからない状態を通知します
+            raise HermesSessionNotFoundError(message_key='gateway.hermesClient.runNotFound')
         return record.to_public_dict()
 
     async def stop_run(self, run_id: str) -> dict[str, Any]:
@@ -475,11 +482,13 @@ class HermesRunCoordinator:
 
         async with record.approval_lock:
             if not record.approval_details_available:
+                # 利用者へ通知する条件: 承認内容を復元できないため回答できません
                 raise HermesConflictError(
-                    "承認内容を復元できないため回答できません。安全のためRunを中断してください"
+                    message_key='gateway.runs.approvalUnavailable'
                 )
             if record.finished or record.status != "waiting_for_approval":
-                raise HermesConflictError("この承認要求は既に解決済みか、期限切れです")
+                # 利用者へ通知する条件: この承認要求は既に解決済みか、期限切れです
+                raise HermesConflictError(message_key='gateway.hermesClient.approvalExpired')
             request_id = record.approval_request_id
             execution_generation = record.approval_execution_generation
             # 新Hermes(session authority)はrequest_id・execution_generation・choiceの
@@ -523,7 +532,8 @@ class HermesRunCoordinator:
         """保存済み連番の次から再送し、その後は新しいイベントまたはkeepaliveを返します。"""
         record = self._records.get(run_id)
         if record is None:
-            raise HermesSessionNotFoundError("Avatar GatewayのRunが見つかりません")
+            # Avatar GatewayのRunが見つからない状態を通知します
+            raise HermesSessionNotFoundError(message_key='gateway.hermesClient.runNotFound')
 
         cursor = after
         truncated_notified = False

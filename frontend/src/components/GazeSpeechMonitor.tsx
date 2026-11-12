@@ -1,4 +1,5 @@
 // ウェブカメラで登録した顔が向いたときだけ、積んである視線発話を再生します。
+import { readMessage, t, useTranslation, translateMessage } from '../i18n'
 
 import { useEffect, useRef, useState } from 'react'
 
@@ -246,6 +247,7 @@ export default function GazeSpeechMonitor({
   onSpoken,
   getAudioContext,
 }: Props) {
+  useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
   const detectCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -303,9 +305,9 @@ export default function GazeSpeechMonitor({
   useEffect(() => {
     if (!cameraNeeded) {
       stopCamera()
-      if (!enabledRef.current) onStatusRef.current('停止中')
-      else if (!enrollmentRef.current) onStatusRef.current('顔が未登録です')
-      if (!faceFollowRef.current) onFaceFollowStatusRef.current('停止中')
+      if (!enabledRef.current) onStatusRef.current(t('gaze.status.stopped'))
+      else if (!enrollmentRef.current) onStatusRef.current(t('gaze.status.notEnrolled'))
+      if (!faceFollowRef.current) onFaceFollowStatusRef.current(t('gaze.status.stopped'))
       onFaceAnglesRef.current(null)
       return
     }
@@ -315,8 +317,8 @@ export default function GazeSpeechMonitor({
     let cancelled = false
 
     const start = async () => {
-      if (enabledRef.current || enrolling) onStatusRef.current('カメラを準備しています')
-      if (faceFollowRef.current) onFaceFollowStatusRef.current('カメラを準備しています')
+      if (enabledRef.current || enrolling) onStatusRef.current(t('gaze.status.cameraPreparing'))
+      if (faceFollowRef.current) onFaceFollowStatusRef.current(t('gaze.status.cameraPreparing'))
       try {
         await loadFaceApi()
         if (cancelled) return
@@ -331,13 +333,13 @@ export default function GazeSpeechMonitor({
         streamRef.current = stream
         video.srcObject = stream
         await video.play()
-        if (enrolling) onStatusRef.current('顔が映ったら登録できます')
-        else if (enabledRef.current) onStatusRef.current('監視中')
-        if (faceFollowRef.current) onFaceFollowStatusRef.current('顔を探しています')
+        if (enrolling) onStatusRef.current(t('gaze.status.readyToEnroll'))
+        else if (enabledRef.current) onStatusRef.current(t('gaze.status.monitoring'))
+        if (faceFollowRef.current) onFaceFollowStatusRef.current(t('gaze.status.searching'))
       } catch {
         if (cancelled) return
-        if (enabledRef.current || enrolling) onStatusRef.current('カメラまたは顔モデルを利用できません')
-        if (faceFollowRef.current) onFaceFollowStatusRef.current('カメラまたは顔モデルを利用できません')
+        if (enabledRef.current || enrolling) onStatusRef.current(t('gaze.status.cameraUnavailable'))
+        if (faceFollowRef.current) onFaceFollowStatusRef.current(t('gaze.status.cameraUnavailable'))
       }
     }
     void start()
@@ -378,17 +380,17 @@ export default function GazeSpeechMonitor({
           })), followed !== null, GAZE_MATCH_DISTANCE)
           if (!box) {
             onFaceAnglesRef.current(null)
-            onFaceFollowStatusRef.current(followed ? '登録した顔が見つかりません' : '顔が見つかりません')
+            onFaceFollowStatusRef.current(followed ? t('gaze.status.enrolledFaceMissing') : t('gaze.status.faceMissing'))
           } else {
             const angles = faceFollowAngles(box, video.videoWidth, video.videoHeight)
             onFaceAnglesRef.current(angles)
-            onFaceFollowStatusRef.current(angles ? '顔の位置に合わせています' : '顔の位置を読めませんでした')
+            onFaceFollowStatusRef.current(angles ? t('gaze.status.following') : t('gaze.status.positionUnavailable'))
           }
         }
         if (faces.length !== 1) {
           lookSinceRef.current = null
           armedRef.current = true
-          onStatusRef.current(faces.length === 0 ? '顔が見つかりません' : '顔が複数あります')
+          onStatusRef.current(faces.length === 0 ? t('gaze.status.faceMissing') : t('gaze.status.multipleFaces'))
           return
         }
         const currentEnrollment = enrollmentRef.current
@@ -397,14 +399,14 @@ export default function GazeSpeechMonitor({
         if (!face.descriptor || !face.landmarks) {
           lookSinceRef.current = null
           armedRef.current = true
-          onStatusRef.current('顔の位置を読み取れませんでした')
+          onStatusRef.current(t('gaze.status.positionReadFailed'))
           return
         }
         const distance = descriptorDistance(currentEnrollment.descriptor, face.descriptor)
         if (distance > GAZE_MATCH_DISTANCE) {
           lookSinceRef.current = null
           armedRef.current = true
-          onStatusRef.current('登録した顔と一致しません')
+          onStatusRef.current(t('gaze.status.faceMismatch'))
           return
         }
         const pose = poseFromLandmarks(face.landmarks)
@@ -414,23 +416,23 @@ export default function GazeSpeechMonitor({
         if (!looking) {
           lookSinceRef.current = null
           armedRef.current = true
-          onStatusRef.current('本人を確認しています')
+          onStatusRef.current(t('gaze.status.verifying'))
           return
         }
         if (!armedRef.current) {
-          onStatusRef.current('カメラを見ています')
+          onStatusRef.current(t('gaze.status.lookingAtCamera'))
           return
         }
         if (lookSinceRef.current === null) lookSinceRef.current = performance.now()
         if (performance.now() - lookSinceRef.current < GAZE_DWELL_MS) {
-          onStatusRef.current('カメラを見ています')
+          onStatusRef.current(t('gaze.status.lookingAtCamera'))
           return
         }
         lookSinceRef.current = null
         armedRef.current = false
         await claimAndPlay()
       } catch {
-        if (!stopped) onStatusRef.current('顔の確認に失敗しました')
+        if (!stopped) onStatusRef.current(t('gaze.status.verificationFailed'))
       } finally {
         busy = false
         detectBusyRef.current = false
@@ -445,14 +447,14 @@ export default function GazeSpeechMonitor({
   }, [blocked, enabled, enrolling, enrollment, ttsEnabled])
 
   useEffect(() => {
-    if (enabled && enrollment && !ttsEnabled) onStatusRef.current('音声合成が無効です')
+    if (enabled && enrollment && !ttsEnabled) onStatusRef.current(t('gaze.status.ttsDisabled'))
   }, [enabled, enrollment, ttsEnabled])
 
   useEffect(() => {
     const gazeOwnsCamera = enabled && enrollment !== null && !enrolling && !blocked && ttsEnabled
     if (!faceFollow || enrolling || gazeOwnsCamera) {
       if (!faceFollow || enrolling) onFaceAnglesRef.current(null)
-      if (!faceFollow) onFaceFollowStatusRef.current('停止中')
+      if (!faceFollow) onFaceFollowStatusRef.current(t('gaze.status.stopped'))
       return
     }
     let stopped = false
@@ -460,12 +462,12 @@ export default function GazeSpeechMonitor({
     const publish = (box: { x: number, y: number, width: number, height: number } | null, video: HTMLVideoElement) => {
       if (!box) {
         onFaceAnglesRef.current(null)
-        onFaceFollowStatusRef.current(enrollmentRef.current ? '登録した顔が見つかりません' : '顔が見つかりません')
+        onFaceFollowStatusRef.current(enrollmentRef.current ? t('gaze.status.enrolledFaceMissing') : t('gaze.status.faceMissing'))
         return
       }
       const angles = faceFollowAngles(box, video.videoWidth, video.videoHeight)
       onFaceAnglesRef.current(angles)
-      onFaceFollowStatusRef.current(angles ? '顔の位置に合わせています' : '顔の位置を読めませんでした')
+      onFaceFollowStatusRef.current(angles ? t('gaze.status.following') : t('gaze.status.positionUnavailable'))
     }
 
     const tick = async () => {
@@ -494,7 +496,7 @@ export default function GazeSpeechMonitor({
       } catch {
         if (!stopped) {
           onFaceAnglesRef.current(null)
-          onFaceFollowStatusRef.current('顔の位置を読めませんでした')
+          onFaceFollowStatusRef.current(t('gaze.status.positionUnavailable'))
         }
       } finally {
         detectBusyRef.current = false
@@ -523,12 +525,14 @@ export default function GazeSpeechMonitor({
         const faces = await locateFaces(faceapi, video, detectCanvasRef.current, detectEaseRef.current, true)
         const face = faces[0]
         if (faces.length !== 1 || !face?.descriptor || !face.landmarks) {
-          setCaptureError('顔が一つだけ映る位置で登録してください。')
+          // 誤登録を防ぐため、一人だけが映る状態での登録を求めます。
+          setCaptureError(t('gaze.errors.singleFaceRequired'))
           return
         }
         const pose = poseFromLandmarks(face.landmarks)
         if (!pose) {
-          setCaptureError('顔の位置を読み取れませんでした。')
+          // 顔の位置が取得できない状態では、登録を進めません。
+          setCaptureError(t('gaze.errors.enrollPosition'))
           return
         }
         samples.push({ descriptor: face.descriptor, ...pose })
@@ -536,7 +540,8 @@ export default function GazeSpeechMonitor({
       }
       const first = samples[0].descriptor
       if (samples.some((sample) => descriptorDistance(first, sample.descriptor) > 0.45)) {
-        setCaptureError('顔が動いています。正面を向いて止まってください。')
+        // 登録値がぶれないよう、正面を向いて静止することを求めます。
+        setCaptureError(t('gaze.errors.faceMoving'))
         return
       }
       onEnrolled({
@@ -546,7 +551,8 @@ export default function GazeSpeechMonitor({
       })
       onEnrollClose()
     } catch {
-      setCaptureError('顔を登録できませんでした。')
+      // 顔登録が完了しなかったことを利用者へ知らせます。
+      setCaptureError(t('gaze.errors.enroll'))
     } finally {
       setCapturing(false)
     }
@@ -563,7 +569,7 @@ export default function GazeSpeechMonitor({
       text: '',
       beatIndex: 0,
     })
-    onStatusRef.current('無言で反応しています')
+    onStatusRef.current(t('gaze.status.silentReaction'))
     const until = performance.now() + SILENT_GAZE_HOLD_MS
     while (performance.now() < until) {
       if (blockedRef.current || interruptedRef.current) break
@@ -582,7 +588,8 @@ export default function GazeSpeechMonitor({
       const response = await fetch('/api/gaze-speech/claim', { method: 'POST' })
       const payload = await response.json() as Record<string, unknown>
       if (!response.ok) {
-        onStatusRef.current(typeof payload.detail === 'string' ? payload.detail : '視線発話を準備できませんでした')
+        // 視線発話を開始できない理由を利用者へ知らせます。
+        onStatusRef.current(readMessage(payload, t('gaze.errors.prepareSpeech')))
         return
       }
       const beats = readGazeBeats(payload)
@@ -591,7 +598,8 @@ export default function GazeSpeechMonitor({
         return
       }
       if (blockedRef.current) {
-        cancelGazeBeats(beats, '会話が始まったため視線発話を中止しました')
+        // 通常の会話を優先し、競合する視線発話を取り消します。
+        cancelGazeBeats(beats, t('gaze.errors.conversationStarted'))
         return
       }
       const context = getAudioContextRef.current()
@@ -600,16 +608,19 @@ export default function GazeSpeechMonitor({
         const beat = beats[index]
         unplayed = beats.slice(index)
         if (blockedRef.current) {
-          cancelGazeBeats(unplayed, '会話が始まったため視線発話を中止しました')
+          // 通常の会話を優先し、競合する視線発話を取り消します。
+          cancelGazeBeats(unplayed, t('gaze.errors.conversationStarted'))
           unplayed = []
           completedAll = false
           break
         }
         const audioResponse = await fetch(beat.audioUrl)
-        if (!audioResponse.ok) throw new Error('音声ファイルを取得できませんでした')
+        // ここで中断する条件: 音声ファイルを取得できませんでした。
+        if (!audioResponse.ok) throw new Error(t('gaze.errors.audioFetch'))
         const buffer = await context.decodeAudioData(await audioResponse.arrayBuffer())
         if (blockedRef.current) {
-          cancelGazeBeats(unplayed, '会話が始まったため視線発話を中止しました')
+          // 通常の会話を優先し、競合する視線発話を取り消します。
+          cancelGazeBeats(unplayed, t('gaze.errors.conversationStarted'))
           unplayed = []
           completedAll = false
           break
@@ -624,7 +635,8 @@ export default function GazeSpeechMonitor({
         unplayed = beats.slice(index + 1)
         const completed = await playBuffer(context, buffer, beat.utteranceId, index < beats.length - 1)
         if (!completed) {
-          cancelGazeBeats(unplayed, '視線発話を中止しました')
+          // 中断した視線発話を、完了した発話として扱いません。
+          cancelGazeBeats(unplayed, t('gaze.errors.speechCancelled'))
           unplayed = []
           completedAll = false
           break
@@ -632,8 +644,10 @@ export default function GazeSpeechMonitor({
       }
       if (completedAll) onSpokenRef.current()
     } catch {
-      cancelGazeBeats(unplayed, '視線発話を再生できませんでした')
-      onStatusRef.current('音声を再生できませんでした')
+      // 視線発話の再生失敗を利用者へ知らせます。
+      cancelGazeBeats(unplayed, t('gaze.errors.speechPlay'))
+      // 音声の再生失敗を利用者へ知らせます。
+      onStatusRef.current(t('gaze.errors.audioPlay'))
     } finally {
       playingRef.current = false
       if (acted) onBeatRef.current(null)
@@ -659,7 +673,7 @@ export default function GazeSpeechMonitor({
     sourceRef.current = source
     interruptedRef.current = false
     onAudioRef.current(analyser)
-    onStatusRef.current('話しかけています')
+    onStatusRef.current(t('gaze.status.speaking'))
     notifySpeech('speech.started', utteranceId)
     const startedAt = performance.now()
     return new Promise((resolve) => {
@@ -667,11 +681,12 @@ export default function GazeSpeechMonitor({
         const interrupted = interruptedRef.current
         if (sourceRef.current === source) sourceRef.current = null
         if (!handoff || interrupted) onAudioRef.current(null)
+        // 中断した視線発話を、完了した発話として扱いません。
         notifySpeech(
           interrupted ? 'speech.cancelled' : 'speech.completed',
           utteranceId,
           interrupted
-            ? { reason: '視線発話を中止しました' }
+            ? { reason: t('gaze.errors.speechCancelled') }
             : { played_ms: Math.round(performance.now() - startedAt) },
         )
         resolve(!interrupted)
@@ -714,15 +729,15 @@ export default function GazeSpeechMonitor({
         aria-hidden={enrolling ? undefined : true}
       />
       {enrolling && (
-        <div className="gaze-enroll-card" role="dialog" aria-modal="true" aria-label="顔の登録">
-          <h2>顔を登録</h2>
-          <p>ウェブカメラの正面を向いて、顔が一つだけ映った状態で登録してください。画像は保存せず、このブラウザに特徴量だけを残します。</p>
-            {captureError && <p className="settings-error" role="alert">{captureError}</p>}
+        <div className="gaze-enroll-card" role="dialog" aria-modal="true" aria-label={t('gaze.enrollment.panelLabel')}>
+          <h2>{t('gaze.enrollment.title')}</h2>
+          <p>{t('gaze.enrollment.description')}</p>
+            {captureError && <p className="settings-error" role="alert">{translateMessage(captureError)}</p>}
             <div className="settings-row-actions">
               <button type="button" className="primary" disabled={capturing} onClick={() => void captureFace()}>
-                {capturing ? '登録中…' : 'この顔を登録'}
+                {capturing ? t('gaze.enrollment.saving') : t('gaze.enrollment.save')}
               </button>
-              <button type="button" disabled={capturing} onClick={onEnrollClose}>キャンセル</button>
+              <button type="button" disabled={capturing} onClick={onEnrollClose}>{t('gaze.enrollment.cancel')}</button>
             </div>
           </div>
       )}

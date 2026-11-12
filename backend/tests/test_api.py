@@ -117,6 +117,8 @@ async def test_health_returns_runtime_capabilities(
         "device": "cpu",
         "compute_type": "int8",
         "message": "Whisperモデルが未導入です。READMEの音声認識モデル導入手順を実行してください。",
+        "message_key": "gateway.whisper.modelMissingNotice",
+        "message_params": {},
     }
     assert response["vrm_available"] is True
     assert response["vrm_url"] == "/assets/vrm/はむ子.vrm"

@@ -4,6 +4,8 @@ export type Role = 'user' | 'assistant'
 export interface Message {
   role: Role
   content: string
+  message_key?: string
+  message_params?: Record<string, unknown>
 }
 
 export interface HermesSessionSummary {
@@ -54,6 +56,8 @@ export interface Health {
     device: string
     compute_type: string
     message: string | null
+    message_key?: string
+    message_params?: Record<string, unknown>
   }
   vrm_available: boolean
   vrm_url: string | null
@@ -61,6 +65,7 @@ export interface Health {
   motions: MotionCatalogItem[]
   generating_motion: string | null
   motion_catalog_error: string | null
+  motion_catalog_message?: Record<string, unknown> | null
 }
 
 export interface HermesHealth {
@@ -194,6 +199,7 @@ export interface VrmTouchInput extends VrmTouchHit {
 
 export interface UiSettings {
   schema_version: 1
+  language: string
   cast_off_enabled: boolean
   show_motion_controls: boolean
   show_camera_help: boolean

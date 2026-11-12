@@ -1,4 +1,5 @@
 // Three.jsの描画環境を所有し、VRM固有の振る舞いは再利用可能なランタイムへ委譲します。
+import { t, useTranslation, translateMessage } from '../i18n'
 import { type DragEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -26,7 +27,7 @@ import type {
 import { CastOffController } from '../vrm/CastOffController'
 import { logCastOffVrmStructure } from '../vrm/CastOffDiagnostics'
 import { VrmRuntime } from '../vrm/VrmRuntime'
-import { VRM_TOUCH_COLLIDER_LABELS, VrmTouchController } from '../vrm/VrmTouchController'
+import { VrmTouchController } from '../vrm/VrmTouchController'
 import { VrmaPlayer } from '../vrm/VrmaPlayer'
 
 interface Props {
@@ -136,6 +137,7 @@ export default function VrmStage({
   onVrmTouch,
   faceFollowRef,
 }: Props) {
+  useTranslation()
   const hostRef = useRef<HTMLDivElement>(null)
   const hitboxEditorRef = useRef<HTMLDivElement>(null)
   const hitboxEditorDragRef = useRef<{ pointerId: number, offsetX: number, offsetY: number } | null>(null)
@@ -373,7 +375,8 @@ export default function VrmStage({
     if (!motionCommand) return
     const player = playerRef.current
     if (!player) {
-      statusCallbackRef.current({ state: 'error', name: motionCommand.name ?? null, message: 'VRMの読み込み完了後に再生してください' })
+      // 通知する状態・条件: VRMの読み込み完了後に再生してください。
+      statusCallbackRef.current({ state: 'error', name: motionCommand.name ?? null, message: t('stage.errors.playBeforeLoaded') })
       return
     }
     if (motionCommand.action === 'stop') {
@@ -393,7 +396,8 @@ export default function VrmStage({
     onLocalMotionRequestConsumed(localMotionRequest.id)
     const player = playerRef.current
     if (!player) {
-      statusCallbackRef.current({ state: 'error', name: localMotionRequest.file.name, message: 'VRMの読み込み完了後に試してください' })
+      // 通知する状態・条件: VRMの読み込み完了後に試してください。
+      statusCallbackRef.current({ state: 'error', name: localMotionRequest.file.name, message: t('stage.errors.previewBeforeLoaded') })
       return
     }
 
@@ -778,7 +782,8 @@ export default function VrmStage({
         if (disposed) return
         vrm = gltf.userData.vrm as VRM
         if (!vrm) {
-          setLoadError('VRM情報を読み取れませんでした。対応するVRMファイルか確認してください。')
+          // 通知する状態・条件: VRM情報を読み取れませんでした。
+          setLoadError(t('stage.errors.invalidVrm'))
           setLoadProgress(null)
           return
         }
@@ -809,8 +814,10 @@ export default function VrmStage({
         }
       }, (cause) => {
         if (disposed) return
-        const detail = cause instanceof Error ? cause.message : '不明な読み込みエラー'
-        setLoadError(`VRMを読み込めませんでした: ${detail}`)
+        // 通知する状態・条件: 不明な読み込みエラー。
+        const detail = cause instanceof Error ? cause.message : t('stage.errors.unknownLoad')
+        // 通知する状態・条件: VRMを読み込めませんでした: 対象値。
+        setLoadError(t('stage.errors.load', { detail: detail }))
         setLoadProgress(null)
       })
     }
@@ -884,7 +891,7 @@ export default function VrmStage({
   return (
     <div
       className={`vrm-stage${effectiveTouchMode ? ' touch-active' : ''}${touchInteraction.edit_hitboxes ? ' hitbox-editing' : ''}${localMotionDragActive ? ' motion-drop-active' : ''}`}
-      aria-label="VRMアバター表示領域"
+      aria-label={t('stage.panelLabel')}
       onDragEnter={handleLocalMotionDragEnter}
       onDragOver={handleLocalMotionDragOver}
       onDragLeave={handleLocalMotionDragLeave}
@@ -899,25 +906,25 @@ export default function VrmStage({
         }}
       />
       <div className="vrm-canvas" ref={hostRef} />
-      {loadProgress !== null && <div className="vrm-loading">VRMを読み込み中… {loadProgress}%</div>}
-      {loadError && <div className="vrm-load-error" role="alert">{loadError}</div>}
+      {loadProgress !== null && <div className="vrm-loading">{t('stage.loading', { progress: loadProgress })}</div>}
+      {loadError && <div className="vrm-load-error" role="alert">{translateMessage(loadError)}</div>}
       {localMotionDragActive && (
         <div className={`motion-drop-overlay${localMotionPreviewBlocked ? ' blocked' : ''}`} role="status">
-          <strong>{localMotionPreviewBlocked ? '会話中は再生できません' : 'VRMAをドロップして一時再生'}</strong>
-          <span>カタログには登録されません</span>
+          <strong>{localMotionPreviewBlocked ? t('stage.preview.busy') : t('stage.preview.drop')}</strong>
+          <span>{t('stage.preview.notRegistered')}</span>
         </div>
       )}
       {cameraReady && showCameraHelp && (
         <div className="camera-help">
-          <span>左: 移動 · ホイール: ズーム · 右: 回転</span>
-          <button type="button" onClick={() => resetCameraRef.current()}>カメラをリセット</button>
+          <span>{t('stage.camera.help')}</span>
+          <button type="button" onClick={() => resetCameraRef.current()}>{t('stage.camera.reset')}</button>
         </div>
       )}
       {cameraReady && touchInteraction.enabled && touchInteraction.edit_hitboxes && vrmModelKey && (
         <div
           ref={hitboxEditorRef}
           className="hitbox-editor"
-          aria-label="当たり判定編集"
+          aria-label={t('stage.hitbox.title')}
           style={{ left: hitboxEditorPosition.x, top: hitboxEditorPosition.y }}
         >
           <div
@@ -927,26 +934,26 @@ export default function VrmStage({
             onPointerUp={handleHitboxEditorPointerUp}
             onPointerCancel={handleHitboxEditorPointerUp}
           >
-            <strong>当たり判定編集</strong>
-            <span>ドラッグで移動</span>
+            <strong>{t('stage.hitbox.title')}</strong>
+            <span>{t('stage.hitbox.drag')}</span>
             <button
               type="button"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={resetHitboxEditorPosition}
-            >位置を戻す</button>
+            >{t('stage.hitbox.resetPosition')}</button>
           </div>
           <div className="hitbox-editor-row">
             <label>
-              <span>判定</span>
+              <span>{t('stage.hitbox.collider')}</span>
               <select
                 value={selectedCollider ?? ''}
                 onChange={(event) => selectColliderRef.current(
                   (event.target.value || null) as VrmTouchColliderId | null,
                 )}
               >
-                <option value="">画面で選択</option>
+                <option value="">{t('stage.hitbox.select')}</option>
                 {availableColliders.map((id) => (
-                  <option key={id} value={id}>{VRM_TOUCH_COLLIDER_LABELS[id]}</option>
+                  <option key={id} value={id}>{t(`touch.collider.${id}`)}</option>
                 ))}
               </select>
             </label>
@@ -954,12 +961,12 @@ export default function VrmStage({
               type="button"
               className={hitboxTransformMode === 'translate' ? 'active' : ''}
               onClick={() => setHitboxTransformMode('translate')}
-            >移動</button>
+            >{t('stage.hitbox.translate')}</button>
             <button
               type="button"
               className={hitboxTransformMode === 'scale' ? 'active' : ''}
               onClick={() => setHitboxTransformMode('scale')}
-            >拡縮</button>
+            >{t('stage.hitbox.scale')}</button>
           </div>
           <div className="hitbox-editor-row secondary">
             <label className="hitbox-mirror-toggle">
@@ -968,12 +975,11 @@ export default function VrmStage({
                 checked={mirrorHitboxes}
                 onChange={(event) => setMirrorHitboxes(event.target.checked)}
               />
-              左右連動
-            </label>
-            <button type="button" disabled={!selectedCollider} onClick={resetSelectedHitbox}>選択を戻す</button>
-            <button type="button" onClick={resetAllHitboxes}>全て戻す</button>
+              {t('stage.hitbox.linkSides')}</label>
+            <button type="button" disabled={!selectedCollider} onClick={resetSelectedHitbox}>{t('stage.hitbox.resetSelected')}</button>
+            <button type="button" onClick={resetAllHitboxes}>{t('stage.hitbox.resetAll')}</button>
           </div>
-          <small>{vrmModelKey} · 黄色が選択中です</small>
+          <small>{t('stage.hitbox.selected', { model: vrmModelKey ?? '' })}</small>
         </div>
       )}
       {cameraReady && touchInteraction.enabled && !touchInteraction.edit_hitboxes && (
@@ -982,14 +988,14 @@ export default function VrmStage({
           className={`touch-mode-button${effectiveTouchMode ? ' active' : ''}`}
           aria-pressed={effectiveTouchMode}
           title={touchInteraction.recoil_test_enabled
-            ? '反動だけを確認し、Hermesへは送信しません'
-            : 'Spaceキーを押している間も一時的に有効になります'}
+            ? t('stage.touch.testDescription')
+            : t('stage.touch.description')}
           onClick={() => setTouchMode((current) => !current)}
         >
           <span aria-hidden="true">✋</span>
           {touchInteraction.recoil_test_enabled
-            ? effectiveTouchMode ? '反動テスト中' : '反動テスト'
-            : effectiveTouchMode ? 'ふれあい中' : 'ふれあい'}
+            ? effectiveTouchMode ? t('stage.touch.testing') : t('stage.touch.test')
+            : effectiveTouchMode ? t('stage.touch.active') : t('stage.touch.enable')}
         </button>
       )}
       {cameraReady && castOffEnabled && (
@@ -999,8 +1005,8 @@ export default function VrmStage({
           aria-pressed={!clothesVisible}
           disabled={!castOffAvailable || castOffAnimating}
           title={castOffAvailable
-            ? clothesVisible ? '上着・ボトムス・靴を飛ばします' : '上着・ボトムス・靴を元へ戻します'
-            : 'このモデルには対応する衣装がありません'}
+            ? clothesVisible ? t('stage.clothes.castOff') : t('stage.clothes.restore')
+            : t('stage.clothes.unavailable')}
           onClick={handleCastOffToggle}
         >
           {clothesVisible ? '🪲PUTON' : '🪲CASTOFF'}

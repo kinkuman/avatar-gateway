@@ -1,4 +1,5 @@
 // マイクの常時監視と発話単位の録音を分離し、完全な音声ファイルだけを文字起こしへ渡します。
+import { readMessage, t, useTranslation, translateMessage } from '../i18n'
 
 import { useEffect, useRef, useState } from 'react'
 
@@ -24,13 +25,14 @@ const MAX_UTTERANCE_MS = 60_000
 const NORMAL_CONFIRM_MS = 140
 const BARGE_IN_CONFIRM_MS = 280
 
+// アバターと入力の状態名を翻訳キーへ対応付けます。
 const stateLabels: Record<VoiceInputState, string> = {
-  off: 'マイクOFF',
-  starting: 'マイクを準備中…',
-  listening: '聞き取り待機中',
-  recording: '聞き取り中…',
-  transcribing: '文字起こし中…',
-  error: '音声入力エラー',
+  off: 'voiceInput.state.off', // マイク監視を停止
+  starting: 'voiceInput.state.starting', // 録音環境を準備
+  listening: 'voiceInput.state.listening', // 発話の開始を待機
+  recording: 'voiceInput.state.recording', // 発話を録音
+  transcribing: 'voiceInput.state.transcribing', // 録音を文字へ変換
+  error: 'voiceInput.state.error', // 音声入力の失敗
 }
 
 /** FirefoxとChromiumの両方で使えるOpus形式を優先し、利用可能な録音形式を選びます。 */
@@ -45,15 +47,17 @@ function selectRecorderMimeType(): string | undefined {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate))
 }
 
-/** FastAPIのdetail応答を利用者向けメッセージとして安全に取り出します。 */
+/** 認識APIの翻訳キーを解決し、従来のdetail応答も表示できるようにします。 */
 async function readError(response: Response): Promise<string> {
   try {
     const payload = await response.json() as { detail?: unknown }
-    if (typeof payload.detail === 'string') return payload.detail
+    // 認識APIの具体的な失敗理由がなければ、状態コードで案内します。
+    return readMessage(payload, t('voiceInput.errors.transcriptionStatus', { status: response.status }))
   } catch {
     // JSONでない障害応答では、状態コードを使った共通メッセージへ戻します。
   }
-  return `文字起こしAPIエラー (${response.status})`
+  // 認識APIの具体的な失敗理由がなければ、状態コードで案内します。
+  return t('voiceInput.errors.transcriptionStatus', { status: response.status })
 }
 
 /** 音量監視は継続しつつ、発話ごとに独立した録音ファイルを作って既存会話へ渡します。 */
@@ -66,6 +70,7 @@ export default function VoiceInputControl({
   onBargeIn,
   onTranscript,
 }: Props) {
+  useTranslation()
   const [state, setState] = useState<VoiceInputState>('off')
   const [message, setMessage] = useState('')
   const enabledRef = useRef(false)
@@ -119,7 +124,8 @@ export default function VoiceInputControl({
       if (!response.ok) throw new Error(await readError(response))
       const payload = await response.json() as Partial<TranscriptionResponse>
       const text = typeof payload.text === 'string' ? payload.text.trim() : ''
-      if (!text) throw new Error('発話を認識できませんでした')
+      // ここで中断する条件: 発話を認識できませんでした。
+      if (!text) throw new Error(t('voiceInput.errors.unrecognized'))
       if (enabledRef.current) {
         setState('listening')
         onTranscriptRef.current(text)
@@ -127,7 +133,8 @@ export default function VoiceInputControl({
     } catch (cause) {
       if (!controller.signal.aborted && enabledRef.current) {
         setState('error')
-        setMessage(cause instanceof Error ? cause.message : '音声入力に失敗しました')
+        // 音声入力の失敗を利用者へ知らせます。
+        setMessage(cause instanceof Error ? cause.message : t('voiceInput.errors.input'))
       }
     } finally {
       if (uploadControllerRef.current === controller) uploadControllerRef.current = null
@@ -176,7 +183,8 @@ export default function VoiceInputControl({
     } catch (cause) {
       armedRef.current = false
       setState('error')
-      setMessage(cause instanceof Error ? cause.message : 'ブラウザの録音処理を開始できません')
+      // ブラウザの録音開始に失敗した場合、音声入力をエラー状態へ戻します。
+      setMessage(cause instanceof Error ? cause.message : t('voiceInput.errors.recorderStart'))
       return
     }
     const actualMimeType = recorder.mimeType || mimeType || 'audio/webm'
@@ -209,7 +217,8 @@ export default function VoiceInputControl({
     }
     recorder.onerror = () => {
       discardRef.current = true
-      setMessage('ブラウザの録音処理に失敗しました')
+      // ブラウザの録音処理の失敗を利用者へ知らせます。
+      setMessage(t('voiceInput.errors.recording'))
     }
     try {
       recorder.start()
@@ -219,7 +228,8 @@ export default function VoiceInputControl({
       capturingRef.current = false
       armedRef.current = false
       setState('error')
-      setMessage(cause instanceof Error ? cause.message : 'ブラウザの録音処理を開始できません')
+      // ブラウザの録音開始に失敗した場合、音声入力をエラー状態へ戻します。
+      setMessage(cause instanceof Error ? cause.message : t('voiceInput.errors.recorderStart'))
       return
     }
     setMessage('')
@@ -318,7 +328,8 @@ export default function VoiceInputControl({
     if (!available || enabledRef.current) return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setState('error')
-      setMessage('このブラウザではマイク録音を利用できません')
+      // 必要なブラウザ機能がない場合、録音を開始せず利用不可を案内します。
+      setMessage(t('voiceInput.errors.unsupported'))
       return
     }
     enabledRef.current = true
@@ -356,7 +367,8 @@ export default function VoiceInputControl({
     } catch (cause) {
       stopMicrophone()
       setState('error')
-      setMessage(cause instanceof Error ? cause.message : 'マイクを開始できませんでした')
+      // マイク取得の失敗を、入力待ちの状態と区別して表示します。
+      setMessage(cause instanceof Error ? cause.message : t('voiceInput.errors.microphoneStart'))
     }
   }
 
@@ -377,10 +389,10 @@ export default function VoiceInputControl({
           else void startMicrophone()
         }}
       >
-        {enabledRef.current ? 'マイクOFF' : 'マイクON'}
+        {enabledRef.current ? t('voiceInput.state.off') : t('voiceInput.turnOn')}
       </button>
       <span className="voice-input-status" role="status">
-        {!available ? unavailableMessage || '音声入力は無効です' : message || stateLabels[state]}
+        {translateMessage(!available ? unavailableMessage || t('voiceInput.unavailable') : message || t(stateLabels[state]))}
       </span>
     </div>
   )

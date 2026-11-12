@@ -1,5 +1,7 @@
 """Style-Bert-VITS2の音声を生成し、ブラウザが再生できる一時資産へ保存します。"""
 
+from .messages import UiMessageError, message_ref
+
 from pathlib import Path
 
 import httpx
@@ -41,8 +43,10 @@ async def synthesize(
     try:
         response = await client.post(endpoint, params=params, headers=headers)
         if response.status_code >= 400:
-            raise TtsError(f"Style-Bert-VITS2 APIエラー ({response.status_code}): {response.text[:500]}")
+            # 利用者へ通知する条件: Style-Bert-VITS2 APIエラー (対象値)
+            raise TtsError(message_key='gateway.stylebertvits2.apiError', message_params={'status': response.status_code, 'detail': response.text[:500]})
     except httpx.HTTPError as exc:
-        raise TtsError(f"Style-Bert-VITS2へ接続できません: {exc}") from exc
+        # Style-Bert-VITS2への接続失敗を通知します
+        raise TtsError(message_key='gateway.stylebertvits2.connectionFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
 
     return await store_utterance_audio(response.content, config)

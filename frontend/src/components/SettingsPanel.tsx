@@ -1,4 +1,5 @@
 // ブラウザ固有のUI調整と、明示操作によるサーバー既定値保存を一画面にまとめます。
+import { languages, resolveLanguage, t, useTranslation, translateMessage } from '../i18n'
 
 import type {
   BackgroundAsset,
@@ -8,16 +9,17 @@ import type {
   VrmTouchRegion,
 } from '../types'
 
+// ふれあいの対象部位を翻訳キーへ対応付けます。
 const touchRegionLabels: Record<VrmTouchRegion, string> = {
-  head: '頭',
-  ear: '耳',
-  tail: '尻尾',
-  chest: '胸',
-  hips: '尻',
-  groin: '股間',
-  thigh: '太もも',
-  hand: '手',
-  foot: '足',
+  head: 'touch.region.head',
+  ear: 'touch.region.ear',
+  tail: 'touch.region.tail',
+  chest: 'touch.region.chest',
+  hips: 'touch.region.hips',
+  groin: 'touch.region.groin',
+  thigh: 'touch.region.thigh',
+  hand: 'touch.region.hand',
+  foot: 'touch.region.foot',
 }
 
 interface Props {
@@ -80,22 +82,36 @@ export default function SettingsPanel({
   onResetBrowser,
   onSaveDefaults,
 }: Props) {
+  useTranslation()
   return (
-    <section className="ui-settings" aria-label="表示と音声の設定">
+    <section className="ui-settings" aria-label={t('settings.panelLabel')}>
       <header className="ui-settings-header">
         <div>
-          <span>THIS BROWSER</span>
-          <h2>設定</h2>
-          <p>変更はこのブラウザへ自動保存されます。秘密情報やHermesの設定は扱いません。</p>
+          <span>{t('settings.eyebrow')}</span>
+          <h2>{t('settings.title')}</h2>
+          <p>{t('settings.description')}</p>
         </div>
       </header>
 
       <div className="ui-settings-scroll">
+        {/* 言語が分からない状態でも戻せるよう、見出しは常に日英を併記します。 */}
         <section className="ui-settings-section">
-          <h3>壁紙</h3>
-          <p>同梱画像と`local-assets/backgrounds/`へ追加したPNG、JPEG、WebPをアバターの背景に表示します。</p>
           <label className="settings-select">
-            <span>画像</span>
+            <span>{t('settings.language')}</span>
+            <select aria-label={t('settings.language')} value={resolveLanguage(settings.language)}
+              onChange={(event) => onChange({ language: event.target.value })}>
+              {languages.map((language) => (
+                <option key={language.code} value={language.code}>{language.name}</option>
+              ))}
+            </select>
+          </label>
+        </section>
+        {/* 壁紙の選択と画面への収め方を設定します。 */}
+        <section className="ui-settings-section">
+          <h3>{t('settings.background.title')}</h3>
+          <p>{t('settings.background.description')}</p>
+          <label className="settings-select">
+            <span>{t('settings.background.image')}</span>
             <select
               value={settings.background.file ?? ''}
               onChange={(event) => onChange({
@@ -105,17 +121,17 @@ export default function SettingsPanel({
                 },
               })}
             >
-              <option value="">壁紙なし</option>
+              <option value="">{t('settings.background.none')}</option>
               {settings.background.file
                 && !backgrounds.some((background) => background.file === settings.background.file)
-                && <option value={settings.background.file}>{settings.background.file}（見つかりません）</option>}
+                && <option value={settings.background.file}>{t('settings.background.missing', { file: settings.background.file })}</option>}
               {backgrounds.map((background) => (
                 <option key={background.file} value={background.file}>{background.file}</option>
               ))}
             </select>
           </label>
           <label className="settings-select">
-            <span>表示方法</span>
+            <span>{t('settings.background.fit')}</span>
             <select
               value={settings.background.fit}
               onChange={(event) => onChange({
@@ -125,27 +141,28 @@ export default function SettingsPanel({
                 },
               })}
             >
-              <option value="cover">画面全体を覆う</option>
-              <option value="contain">画像全体を収める</option>
+              <option value="cover">{t('settings.background.cover')}</option>
+              <option value="contain">{t('settings.background.contain')}</option>
             </select>
           </label>
           <div className="settings-row-actions">
             <button type="button" disabled={backgroundsLoading} onClick={onReloadBackgrounds}>
-              {backgroundsLoading ? '読込中…' : '画像一覧を再読込'}
+              {backgroundsLoading ? t('settings.background.loading') : t('settings.background.reload')}
             </button>
           </div>
-          {backgroundsError && <p className="settings-error" role="alert">{backgroundsError}</p>}
+          {backgroundsError && <p className="settings-error" role="alert">{translateMessage(backgroundsError)}</p>}
         </section>
 
+        {/* 動作確認とカメラ案内の表示を設定します。 */}
         <section className="ui-settings-section">
-          <h3>表示</h3>
+          <h3>{t('settings.display.title')}</h3>
           <label className="settings-toggle">
             <input
               type="checkbox"
               checked={settings.show_motion_controls}
               onChange={(event) => onChange({ show_motion_controls: event.target.checked })}
             />
-            <span><strong>モーション確認ボタン</strong><small>VRMAを手動確認するときだけ表示します。</small></span>
+            <span><strong>{t('settings.display.motionPreview')}</strong><small>{t('settings.display.motionPreviewDescription')}</small></span>
           </label>
           <label className="settings-toggle">
             <input
@@ -153,12 +170,13 @@ export default function SettingsPanel({
               checked={settings.show_camera_help}
               onChange={(event) => onChange({ show_camera_help: event.target.checked })}
             />
-            <span><strong>カメラ操作案内</strong><small>アバター上の操作説明とリセットボタンを表示します。</small></span>
+            <span><strong>{t('settings.display.cameraHelp')}</strong><small>{t('settings.display.cameraHelpDescription')}</small></span>
           </label>
         </section>
 
+        {/* ふれあいの有効範囲と当たり判定を設定します。 */}
         <section className="ui-settings-section">
-          <h3>ふれあい</h3>
+          <h3>{t('settings.touch.title')}</h3>
           <label className="settings-toggle">
             <input
               type="checkbox"
@@ -175,10 +193,10 @@ export default function SettingsPanel({
                 })
               }}
             />
-            <span><strong>ふれあい機能</strong><small>ボタンまたはSpace長押し中に、VRMの部位へ触れられます。</small></span>
+            <span><strong>{t('settings.touch.enabled')}</strong><small>{t('settings.touch.description')}</small></span>
           </label>
           <fieldset className="touch-region-settings" disabled={!settings.touch_interaction.enabled}>
-            <legend>反応する部位</legend>
+            <legend>{t('settings.touch.regions')}</legend>
             <div>
               {(Object.entries(touchRegionLabels) as [VrmTouchRegion, string][])
                 .filter(([region]) => (
@@ -203,7 +221,7 @@ export default function SettingsPanel({
                         },
                       })}
                     />
-                    {label}
+                    {t(label)}
                   </label>
                 ))}
             </div>
@@ -220,7 +238,7 @@ export default function SettingsPanel({
                 },
               })}
             />
-            <span><strong>当たり判定を表示</strong><small>位置調整用です。通常利用ではOFFにします。</small></span>
+            <span><strong>{t('settings.touch.showHitboxes')}</strong><small>{t('settings.touch.showHitboxesDescription')}</small></span>
           </label>
           <label className="settings-toggle touch-debug-toggle">
             <input
@@ -234,7 +252,7 @@ export default function SettingsPanel({
                 },
               })}
             />
-            <span><strong>当たり判定を編集</strong><small>アバター画面で判定を選び、移動・拡縮します。調整値はVRM別に保存されます。</small></span>
+            <span><strong>{t('settings.touch.editHitboxes')}</strong><small>{t('settings.touch.editHitboxesDescription')}</small></span>
           </label>
           <label className="settings-toggle touch-debug-toggle">
             <input
@@ -248,14 +266,15 @@ export default function SettingsPanel({
                 },
               })}
             />
-            <span><strong>反動だけテスト</strong><small>VRMの反動だけを確認し、Hermesへ接触を送信しません。</small></span>
+            <span><strong>{t('settings.touch.testRecoil')}</strong><small>{t('settings.touch.testRecoilDescription')}</small></span>
           </label>
         </section>
 
+        {/* 音量・承認時の発話・音声入力を設定します。 */}
         <section className="ui-settings-section">
-          <h3>音声</h3>
+          <h3>{t('settings.speech.title')}</h3>
           <label className="settings-range">
-            <span><strong>読み上げ音量</strong><output>{Math.round(settings.speech_volume * 100)}%</output></span>
+            <span><strong>{t('settings.speech.volume')}</strong><output>{Math.round(settings.speech_volume * 100)}%</output></span>
             <input
               type="range"
               min="0"
@@ -267,8 +286,8 @@ export default function SettingsPanel({
           </label>
           <label className="settings-text">
             <span>
-              <strong>承認をお願いするときの発話</strong>
-              <small>権限の承認ウィンドウを出すとき、この文章を読み上げます。空にすると読み上げません。</small>
+              <strong>{t('settings.speech.approvalPrompt')}</strong>
+              <small>{t('settings.speech.approvalPromptDescription')}</small>
             </span>
             <input
               type="text"
@@ -279,8 +298,8 @@ export default function SettingsPanel({
           </label>
           <label className="settings-range voice-input-setting">
             <span>
-              <strong>話し終わりの無音時間</strong>
-              <output>{(settings.voice_input.silence_ms / 1000).toFixed(1)}秒</output>
+              <strong>{t('settings.voiceInput.silence')}</strong>
+              <output>{t('settings.voiceInput.silenceSeconds', { duration: (settings.voice_input.silence_ms / 1000).toFixed(1) })}</output>
             </span>
             <input
               type="range"
@@ -298,7 +317,7 @@ export default function SettingsPanel({
           </label>
           <label className="settings-range voice-input-setting">
             <span>
-              <strong>発話検知の感度</strong>
+              <strong>{t('settings.voiceInput.sensitivity')}</strong>
               <output>{settings.voice_input.speech_threshold.toFixed(3)}</output>
             </span>
             <input
@@ -315,12 +334,13 @@ export default function SettingsPanel({
               })}
             />
           </label>
-          <small>周囲の音で反応する場合は感度の数値を上げ、声を拾わない場合は下げます。</small>
+          <small>{t('settings.voiceInput.sensitivityDescription')}</small>
         </section>
 
+        {/* 顔検出と視線を使う機能を設定します。 */}
         <section className="ui-settings-section">
-          <h3>顔（視線）の検出</h3>
-          <p>ウェブカメラを使った視線・顔の機能をまとめて設定します。画像は保存しません。</p>
+          <h3>{t('settings.face.title')}</h3>
+          <p>{t('settings.face.description')}</p>
 
           <div className="gaze-group">
             <label className="settings-toggle">
@@ -330,22 +350,22 @@ export default function SettingsPanel({
                 onChange={(event) => onGazeEnabled(event.target.checked)}
               />
               <span>
-                <strong>視線で話しかける</strong>
-                <small>登録した顔がウェブカメラを向くと、Hermesのcronが出した短い文を読み上げます。指示文は <code>docs/gaze_speech_hermes.md</code> です。</small>
+                <strong>{t('settings.gaze.enabled')}</strong>
+                <small>{t('settings.gaze.description', { path: 'docs/gaze_speech_hermes.md' })}</small>
               </span>
             </label>
             <div className="settings-row-actions">
-              <button type="button" className="primary" onClick={onGazeEnroll}>顔を登録</button>
-              <button type="button" disabled={!gazeEnrolled} onClick={onGazeClear}>登録を消す</button>
+              <button type="button" className="primary" onClick={onGazeEnroll}>{t('settings.gaze.enroll')}</button>
+              <button type="button" disabled={!gazeEnrolled} onClick={onGazeClear}>{t('settings.gaze.clearEnrollment')}</button>
             </div>
             <small className="gaze-setting-status">
               <span>
-                {gazeEnrolled ? 'このブラウザに顔を登録済みです。' : '顔は未登録です。'}
-                {gazePending === null ? '' : `未読は${gazePending}件です。`}
+                {gazeEnrolled ? t('settings.gaze.enrolled') : t('settings.gaze.notEnrolled')}
+                {gazePending === null ? '' : t('settings.gaze.unread', { count: gazePending })}
               </span>
-              {gazeJobFound === false ? <span>Hermes側に avatar-gateway-gaze のジョブがまだ見当たりません。</span> : null}
-              {gazeStatus ? <span>{`状態: ${gazeStatus}`}</span> : null}
-              <span>ブラウザ設定のリセットでは、この顔登録は消えません。</span>
+              {gazeJobFound === false ? <span>{t('settings.gaze.jobMissing')}</span> : null}
+              {gazeStatus ? <span>{t('settings.face.status', { status: translateMessage(gazeStatus) })}</span> : null}
+              <span>{t('settings.gaze.resetNotice')}</span>
             </small>
 
             <label className="settings-toggle">
@@ -355,11 +375,11 @@ export default function SettingsPanel({
                 onChange={(event) => onFaceFollow(event.target.checked)}
               />
               <span>
-                <strong>顔の位置を見る</strong>
-                <small>ウェブカメラに映った顔の位置へ、視線と顔の向きを向けます。登録した顔があるときはその人だけを見ます。未登録のときは、いちばん大きく映っている顔を見ます。</small>
+                <strong>{t('settings.faceFollow.enabled')}</strong>
+                <small>{t('settings.faceFollow.description')}</small>
               </span>
             </label>
-            {faceFollow && <small className="gaze-setting-status">状態: {faceFollowStatus}</small>}
+            {faceFollow && <small className="gaze-setting-status">{t('settings.face.status', { status: translateMessage(faceFollowStatus) })}</small>}
 
             <label className="settings-toggle">
               <input
@@ -368,8 +388,8 @@ export default function SettingsPanel({
                 onChange={(event) => onDetectEase(event.target.checked)}
               />
               <span>
-                <strong>顔の検出を見やすくする</strong>
-                <small>暗いときだけ、検出用の画面の明るさを上げます。視線発話、顔の位置を見る、顔の登録で使います。明るい映像はそのままです。本人かどうかの判定は変えません。</small>
+                <strong>{t('settings.detectEase.enabled')}</strong>
+                <small>{t('settings.detectEase.description')}</small>
               </span>
             </label>
 
@@ -380,45 +400,46 @@ export default function SettingsPanel({
                 onChange={(event) => onGazeMessageSync(event.target.checked)}
               />
               <span>
-                <strong>視線発話をメッセージに同期</strong>
-                <small>視線で話しかけた内容を、次のユーザー発言と一緒に送ります。会話欄ではHermes側の吹き出しとして表示します。</small>
+                <strong>{t('settings.gaze.syncMessages')}</strong>
+                <small>{t('settings.gaze.syncMessagesDescription')}</small>
               </span>
             </label>
           </div>
         </section>
 
+        {/* このブラウザのカメラ開始位置を保存します。 */}
         <section className="ui-settings-section">
-          <h3>カメラ</h3>
-          <p>左側のアバターを移動・回転・ズームした結果を、このブラウザの開始位置にできます。</p>
+          <h3>{t('settings.camera.title')}</h3>
+          <p>{t('settings.camera.description')}</p>
           <div className="settings-row-actions">
             <button
               type="button"
               disabled={!currentCamera}
               onClick={() => currentCamera && onChange({ camera: currentCamera })}
             >
-              現在位置を保存
-            </button>
-            <button type="button" onClick={() => onChange({ camera: null })}>自動調整へ戻す</button>
+              {t('settings.camera.save')}</button>
+            <button type="button" onClick={() => onChange({ camera: null })}>{t('settings.camera.reset')}</button>
           </div>
-          <small>{settings.camera ? '保存したカメラ位置を使用します。' : 'VRMと画面サイズから自動調整します。'}</small>
+          <small>{settings.camera ? t('settings.camera.saved') : t('settings.camera.automatic')}</small>
         </section>
 
+        {/* 全ブラウザ向けの初期値へ保存する操作をまとめます。 */}
         <section className="ui-settings-section server-defaults">
-          <h3>サーバー既定値</h3>
-          <p>現在値を`config/ui.json`へ保存すると、新しいブラウザの初期値になります。既存ブラウザの上書き値は自動変更されません。</p>
+          <h3>{t('settings.defaults.title')}</h3>
+          <p>{t('settings.defaults.description')}</p>
           <div className="settings-row-actions">
-            <button type="button" onClick={onResetBrowser}>ブラウザ設定をリセット</button>
+            <button type="button" onClick={onResetBrowser}>{t('settings.defaults.resetBrowser')}</button>
             <button
               type="button"
               className="primary"
               disabled={savingDefaults}
               onClick={onSaveDefaults}
             >
-              {savingDefaults ? '保存中…' : '現在値をサーバー既定値にする'}
+              {savingDefaults ? t('settings.defaults.saving') : t('settings.defaults.save')}
             </button>
           </div>
-          {message && <p className="settings-message" role="status">{message}</p>}
-          {error && <p className="settings-error" role="alert">{error}</p>}
+          {message && <p className="settings-message" role="status">{translateMessage(message)}</p>}
+          {error && <p className="settings-error" role="alert">{translateMessage(error)}</p>}
         </section>
       </div>
     </section>

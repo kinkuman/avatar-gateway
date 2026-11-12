@@ -1,4 +1,5 @@
 // 会話履歴、SSE応答、音声再生、アバター状態を結び付ける画面本体です。
+import { messageContent, readResponseMessage, readMessage, changeLanguage, t, useTranslation, translateMessage } from './i18n'
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import ApprovalPanel from './components/ApprovalPanel'
@@ -55,12 +56,13 @@ import type {
   VrmTouchRegion,
 } from './types'
 
+// アバターと入力の状態名を翻訳キーへ対応付けます。
 const stateLabels: Record<AvatarState, string> = {
-  idle: '待機中',
-  generating: '考え中',
-  synthesizing: '音声を準備中',
-  speaking: '発話中',
-  error: 'エラー',
+  idle: 'app.avatar.idle', // 応答待ち
+  generating: 'app.avatar.generating', // 返答を生成する段階
+  synthesizing: 'app.avatar.synthesizing', // 読み上げ音声を準備する段階
+  speaking: 'app.avatar.speaking', // 音声を再生する段階
+  error: 'app.avatar.error', // 失敗が発生した状態
 }
 
 const MAX_LOCAL_MOTION_FILE_BYTES = 50 * 1024 * 1024
@@ -127,9 +129,10 @@ interface ConversationSession {
 
 const HERMES_SESSION_STORAGE_KEY = 'avatar-gateway.hermes-session-id'
 
+// 音声合成の提供元名を翻訳キーへ対応付けます。
 const ttsProviderLabels: Record<string, string> = {
   stylebertvits2: 'Style-Bert-VITS2',
-  openai: 'OpenAI互換API',
+  openai: 'app.tts.openaiCompatible', // OpenAI互換の音声合成サービス
 }
 
 type PreparedSpeech =
@@ -154,16 +157,18 @@ async function prepareSpeech(
 ): Promise<PreparedSpeech> {
   try {
     const audioResponse = await fetch(request.audioUrl, { signal })
-    if (!audioResponse.ok) throw new Error(`音声ファイルを取得できませんでした (${audioResponse.status})`)
+    // ここで中断する条件: 音声ファイルを取得できませんでした (対象値)。
+    if (!audioResponse.ok) throw new Error(await readResponseMessage(audioResponse, t('app.errors.audioFetchStatus', { status: audioResponse.status })))
     const buffer = await context.decodeAudioData(await audioResponse.arrayBuffer())
     // decodeAudioData自体は中断できないため、完了後に古い結果を採用しないよう再確認します。
     if (signal.aborted) return { status: 'cancelled' }
     return { status: 'ready', buffer }
   } catch (cause) {
     if (signal.aborted || isAbortError(cause)) return { status: 'cancelled' }
+    // 通知する状態・条件: 音声を準備できませんでした。
     return {
       status: 'failed',
-      error: cause instanceof Error ? cause.message : '音声を準備できませんでした。',
+      error: cause instanceof Error ? cause.message : t('app.errors.audioPrepare'),
     }
   }
 }
@@ -224,7 +229,8 @@ function cancelConversationSession(session: ConversationSession): void {
   if (session.cancelled) return
   session.cancelled = true
   session.controller.abort()
-  cancelSessionSpeech(session, '利用者が会話を中断しました')
+  // 通知する状態・条件: 利用者が会話を中断しました。
+  cancelSessionSpeech(session, t('app.errors.conversationInterrupted'))
 }
 
 /** 準備済みの一文を順番に再生し、区間ごとの開始・完了・失敗を通知します。 */
@@ -278,8 +284,9 @@ async function playPreparedSpeech(
     setAnalyser(analyser)
 
     const ended = new Promise<void>((resolve, reject) => {
+      // 通知する状態・条件: 音声再生がタイムアウトしました。
       timeoutId = window.setTimeout(
-        () => reject(new Error('音声再生がタイムアウトしました')),
+        () => reject(new Error(t('app.errors.audioTimeout'))),
         Math.ceil(prepared.buffer.duration * 1000) + 5000,
       )
       source.onended = () => {
@@ -314,7 +321,8 @@ async function playPreparedSpeech(
     ) {
       return { status: 'cancelled', error: null }
     }
-    const reason = cause instanceof Error ? cause.message : '音声を再生できませんでした。'
+    // 音声の再生失敗を利用者へ知らせます。
+    const reason = cause instanceof Error ? cause.message : t('app.errors.audioPlay')
     try {
       source.stop()
     } catch {
@@ -423,7 +431,8 @@ function createPcmPlayback(
     const remainingMs = Math.max(0, (nextTime - context.currentTime) * 1000) + 8000
     timeoutId = window.setTimeout(() => {
       stopSources()
-      const reason = '音声再生がタイムアウトしました'
+      // 通知する状態・条件: 音声再生がタイムアウトしました。
+      const reason = t('app.errors.audioTimeout')
       void notifySpeech('speech.failed', request, { reason })
       finish({ status: 'failed', error: reason })
     }, remainingMs)
@@ -505,7 +514,8 @@ function createPcmPlayback(
     fail() {
       closed = true
       stopSources()
-      finish({ status: 'failed', error: '音声を生成できませんでした。' })
+      // 音声の生成失敗を利用者へ知らせます。
+      finish({ status: 'failed', error: t('app.errors.audioGenerate') })
     },
     async play() {
       if (settled) return ended
@@ -578,7 +588,7 @@ function readApprovalRequest(
     choices,
     status: 'pending',
     resolvedChoice: null,
-    error: choices.length > 0 ? null : 'Hermesから選択肢が提供されていません。中断してください。',
+    error: choices.length > 0 ? null : t('app.approval.noChoices'),
   }
 }
 
@@ -588,7 +598,7 @@ function updateToolTimeline(
   eventName: 'tool.started' | 'tool.completed',
   data: Record<string, unknown>,
 ): ToolTimelineItem[] {
-  const tool = typeof data.tool === 'string' && data.tool ? data.tool : '不明なツール'
+  const tool = typeof data.tool === 'string' && data.tool ? data.tool : t('app.approval.unknownTool')
   const sequence = typeof data.sequence === 'number' ? data.sequence : items.length + 1
   const timestamp = typeof data.timestamp === 'number' ? data.timestamp : null
 
@@ -635,7 +645,8 @@ async function stopHermesRun(runId: string): Promise<AgentRunState> {
     method: 'POST',
     keepalive: true,
   })
-  if (!stopResponse.ok) throw new Error(`Hermes停止APIエラー: ${stopResponse.status}`)
+  // ここで中断する条件: Hermes停止APIエラー: 対象値。
+  if (!stopResponse.ok) throw new Error(await readResponseMessage(stopResponse, t('app.errors.stopStatus', { status: stopResponse.status })))
 
   for (let attempt = 0; attempt < 40; attempt += 1) {
     await new Promise((resolve) => window.setTimeout(resolve, 250))
@@ -649,15 +660,9 @@ async function stopHermesRun(runId: string): Promise<AgentRunState> {
   return 'stopping'
 }
 
-/** バックエンドの安全化済みdetailを優先し、JSON以外の障害でも状態コードを残します。 */
+/** バックエンドの翻訳キーを優先し、JSON以外の障害でも状態コードを残します。 */
 async function readApiErrorMessage(response: Response, fallback: string): Promise<string> {
-  try {
-    const data = await response.json() as Record<string, unknown>
-    if (typeof data.detail === 'string') return data.detail
-  } catch {
-    // プロキシ等がHTMLを返す場合も、呼び出し側の説明と状態コードで案内します。
-  }
-  return `${fallback}: ${response.status}`
+  return readResponseMessage(response, t('app.motion.playbackStatus', { name: fallback, state: response.status }))
 }
 
 /** Hermesの保存状態を、画面で区別しているRun状態へ不足なく対応付けます。 */
@@ -688,9 +693,11 @@ function activityPhaseForRunState(state: AgentRunState): ConversationActivityPha
 /** バックエンド再起動で失われた情報を明示し、内容不明の承認を促さない案内を返します。 */
 function recoveredRunNotice(state: AgentRunState): string {
   if (state === 'waiting_for_approval') {
-    return 'バックエンド再起動前の承認内容を復元できません。内容不明のため承認は行わず、必要なら「作業を中断」してください。'
+    // 通知する状態・条件: バックエンド再起動前の承認内容を復元できません。
+    return t('app.recovery.approvalUnavailable')
   }
-  return 'バックエンド再起動前の文章差分とツール履歴は復元できません。Hermesの現在状態だけを確認しています。'
+  // 通知する状態・条件: バックエンド再起動前の文章差分とツール履歴は復元できません。
+  return t('app.recovery.historyUnavailable')
 }
 
 /** 再接続の待機中も中断操作へすぐ反応できるよう、AbortSignal対応の短い待機を作ります。 */
@@ -727,6 +734,7 @@ function vrmModelKeyFromUrl(url: string | null): string | null {
 
 /** 初期状態を読み込み、利用者の入力から一連の会話処理を進めます。 */
 export default function App() {
+  useTranslation()
   const [displayMode, setDisplayMode] = useState(() => readDisplayMode(
     localStorage,
     window.matchMedia('(max-width: 1024px) and (orientation: portrait)').matches,
@@ -739,6 +747,8 @@ export default function App() {
   const [uiSettings, setUiSettings] = useState<UiSettings>(() => (
     mergeUiSettings(fallbackUiSettings, uiOverrides)
   ))
+  // ブラウザ選択・サーバー既定値・リセットのすべてで同じ切り替え経路を使います。
+  useLayoutEffect(() => { changeLanguage(uiSettings.language) }, [uiSettings.language])
   const [health, setHealth] = useState<Health | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [hermesSessionId, setHermesSessionId] = useState<string | null>(() => (
@@ -775,8 +785,8 @@ export default function App() {
   const [backgroundsError, setBackgroundsError] = useState('')
   const [gazeSettings, setGazeSettings] = useState(() => readGazeSettings(localStorage))
   const [gazeEnrolling, setGazeEnrolling] = useState(false)
-  const [gazeStatus, setGazeStatus] = useState('停止中')
-  const [faceFollowStatus, setFaceFollowStatus] = useState('停止中')
+  const [gazeStatus, setGazeStatus] = useState(t('app.stopping'))
+  const [faceFollowStatus, setFaceFollowStatus] = useState(t('app.stopping'))
   const faceFollowRef = useRef<FaceFollowAngles | null>(null)
   const [gazePending, setGazePending] = useState<number | null>(null)
   const [gazeJobFound, setGazeJobFound] = useState<boolean | null>(null)
@@ -820,11 +830,11 @@ export default function App() {
       window.clearInterval(timer)
     }
   }, [gazeRefresh, gazeSettings.enabled])
-  const displayModeActionLabel = displayMode === 'conversation' ? '標準画面へ切り替える' : '会話画面へ切り替える'
-  const historyActionLabel = sessionHistoryOpen ? '会話に戻る' : 'セッション履歴'
-  const resourcesActionLabel = agentResourcesOpen ? '会話に戻る' : '機能一覧'
-  const settingsActionLabel = settingsOpen ? '会話に戻る' : '設定'
-  const newSessionActionLabel = sessionResetting ? '新しいセッションを準備中' : '新しいセッション'
+  const displayModeActionLabel = displayMode === 'conversation' ? t('app.navigation.standard') : t('app.navigation.conversation')
+  const historyActionLabel = sessionHistoryOpen ? t('app.navigation.back') : t('app.navigation.history')
+  const resourcesActionLabel = agentResourcesOpen ? t('app.navigation.back') : t('app.navigation.resources')
+  const settingsActionLabel = settingsOpen ? t('app.navigation.back') : t('app.navigation.settings')
+  const newSessionActionLabel = sessionResetting ? t('app.navigation.newSessionPending') : t('app.navigation.newSession')
   // 応答中は表示だけを閉じ、完了後に利用者が選んだ開閉状態へ戻します。
   const conversationTextVisible = conversationTextOpen && !isBusy
   const activeVrmUrl = health?.vrm_url ?? null
@@ -879,13 +889,15 @@ export default function App() {
     saveUiSettingsOverrides(localStorage, {})
     setUiSettings(serverUiSettings)
     setSettingsError('')
-    setSettingsMessage('ブラウザ固有の設定を削除し、サーバー既定値へ戻しました。')
+    // 通知する状態・条件: ブラウザ固有の設定を削除し、サーバー既定値へ戻しました。
+    setSettingsMessage(t('app.settings.browserReset'))
   }
 
   /** 利用者が確認した現在値だけを、明示操作で新しいサーバー既定値へ保存します。 */
   const saveServerUiDefaults = async () => {
     if (settingsSaving) return
-    if (!window.confirm('現在のUI設定をサーバー既定値として保存しますか？\n\n新しいブラウザの初期値になります。')) return
+    // 新しいブラウザの初期値が変わることを確認してから保存します。
+    if (!window.confirm(t('app.settings.confirmSaveDefaults'))) return
     setSettingsSaving(true)
     setSettingsMessage('')
     setSettingsError('')
@@ -895,17 +907,21 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(uiSettings),
       })
-      if (!response.ok) throw new Error(await readApiErrorMessage(response, 'UI設定保存APIエラー'))
+      // ここで中断する条件: UI設定保存APIエラー。
+      if (!response.ok) throw new Error(await readApiErrorMessage(response, t('app.errors.settingsSaveApi')))
       const saved = readUiSettings(await response.json())
-      if (!saved) throw new Error('保存後のUI設定形式が正しくありません。')
+      // ここで中断する条件: 保存後のUI設定形式が正しくありません。
+      if (!saved) throw new Error(t('app.errors.settingsSaveFormat'))
       setServerUiSettings(saved)
       setUiSettings(saved)
       uiOverridesRef.current = {}
       setUiOverrides({})
       saveUiSettingsOverrides(localStorage, {})
-      setSettingsMessage('現在値をconfig/ui.jsonへ保存しました。')
+      // 通知する状態・条件: 現在値をconfig/ui.jsonへ保存しました。
+      setSettingsMessage(t('app.settings.defaultsSaved'))
     } catch (cause) {
-      setSettingsError(cause instanceof Error ? cause.message : 'サーバー既定値を保存できませんでした。')
+      // サーバー既定値の保存失敗を利用者へ知らせます。
+      setSettingsError(cause instanceof Error ? cause.message : t('app.errors.settingsSave'))
     } finally {
       setSettingsSaving(false)
     }
@@ -919,12 +935,15 @@ export default function App() {
     setBackgroundsError('')
     try {
       const response = await fetch('/api/backgrounds')
-      if (!response.ok) throw new Error(await readApiErrorMessage(response, '壁紙一覧APIエラー'))
+      // ここで中断する条件: 壁紙一覧APIエラー。
+      if (!response.ok) throw new Error(await readApiErrorMessage(response, t('app.errors.backgroundsApi')))
       const loaded = readBackgroundAssets(await response.json())
-      if (!loaded) throw new Error('壁紙一覧APIの応答形式が正しくありません。')
+      // ここで中断する条件: 壁紙一覧APIの応答形式が正しくありません。
+      if (!loaded) throw new Error(t('app.errors.backgroundsFormat'))
       setBackgroundAssets(loaded)
     } catch (cause) {
-      setBackgroundsError(cause instanceof Error ? cause.message : '壁紙一覧を取得できませんでした。')
+      // 壁紙一覧の取得失敗を利用者へ知らせます。
+      setBackgroundsError(cause instanceof Error ? cause.message : t('app.errors.backgroundsFetch'))
     } finally {
       backgroundsLoadingRef.current = false
       setBackgroundsLoading(false)
@@ -958,7 +977,7 @@ export default function App() {
       setAgentRunState('waiting_for_approval')
       setConversationActivityPhase('waiting_for_approval')
       if (request) setApprovalRequest(request)
-      else setError('承認要求にRun IDがありません。安全のため回答できません。')
+      else setError(t('app.approval.missingRunId'))
     } else if (eventName === 'approval.responded') {
       setAgentRunState('running')
       setConversationActivityPhase('reviewing')
@@ -977,7 +996,8 @@ export default function App() {
       setAgentRunState('failed')
       setConversationActivityPhase('failed')
       setApprovalRequest(null)
-      setError(typeof data.message === 'string' ? data.message : 'Hermes Runに失敗しました。')
+      // Hermes Runの失敗を利用者へ知らせます。
+      setError(readMessage(data, t('app.errors.runFailed')))
       return 'failed'
     } else if (eventName === 'agent.stopped') {
       setAgentRunState('stopped')
@@ -985,7 +1005,8 @@ export default function App() {
       setApprovalRequest(null)
       return 'stopped'
     } else if (eventName === 'run.replay_truncated') {
-      setRecoveryNotice('古い作業イベントの一部は保存上限を超えたため、現在残っている進捗から表示しています。')
+      // 通知する状態・条件: 古い作業イベントの一部は保存上限を超えたため、現在残っている進捗から表示しています。
+      setRecoveryNotice(t('app.recovery.eventsTruncated'))
     } else if (eventName === 'run.recovered' || eventName === 'run.status') {
       const recoveredState = readAgentRunState(data.status)
       setAgentRunState(recoveredState)
@@ -1019,15 +1040,15 @@ export default function App() {
   const previewLocalMotion = (file: File) => {
     if (!localMotionPreviewEnabled) return
     if (isBusy) {
-      setLocalMotionError('会話処理中はローカルVRMAを再生できません。')
+      setLocalMotionError(t('app.motion.conversationBusy'))
       return
     }
     if (!file.name.toLowerCase().endsWith('.vrma')) {
-      setLocalMotionError('.vrmaファイルを選んでください。')
+      setLocalMotionError(t('app.motion.invalidExtension'))
       return
     }
     if (file.size === 0 || file.size > MAX_LOCAL_MOTION_FILE_BYTES) {
-      setLocalMotionError('VRMAは1バイト以上50MB以下のファイルを選んでください。')
+      setLocalMotionError(t('app.motion.invalidSize'))
       return
     }
 
@@ -1060,7 +1081,8 @@ export default function App() {
           if (displayedRunIdRef.current === stoppedRunId) {
             setAgentRunState('failed')
             setConversationActivityPhase('failed')
-            setError('Hermesの停止状態を確認できませんでした。')
+            // 通知する状態・条件: Hermesの停止状態を確認できませんでした。
+            setError(t('app.errors.stopUnconfirmed'))
           }
         })
     } else {
@@ -1087,7 +1109,8 @@ export default function App() {
     const session = activeSessionRef.current
     if (!session || session.speechStopped) return
 
-    cancelSessionSpeech(session, '利用者が読み上げを停止しました')
+    // 通知する状態・条件: 利用者が読み上げを停止しました。
+    cancelSessionSpeech(session, t('app.errors.speechInterrupted'))
     setSpeechStoppedForRun(true)
     setAnalyser(null)
     setAvatarExpression('neutral')
@@ -1150,7 +1173,8 @@ export default function App() {
     if (newSessionDisabled) return
     const sessionId = hermesSessionId
     if (!sessionId) {
-      if (!window.confirm('表示中の視線の会話を消して、新しいセッションを始めますか？')) return
+      // 通知する状態・条件: 表示中の視線の会話を消して、新しいセッションを始めますか？。
+      if (!window.confirm(t('app.sessions.confirmNewGazeSession'))) return
       gazeStopRef.current?.()
       setGazeTranscript('')
       setInput('')
@@ -1162,14 +1186,16 @@ export default function App() {
       setMotionCommand((current) => ({ id: (current?.id ?? 0) + 1, action: 'stop' }))
       return
     }
-    if (!window.confirm('現在の会話を終了して、新しいセッションを始めますか？\n\n会話履歴はHermes側に保存されます。')) return
+    // 会話履歴を残してセッションを切り替えることを確認します。
+    if (!window.confirm(t('app.sessions.confirmNewSession'))) return
 
     setSessionResetting(true)
     setError('')
     try {
       const response = await fetch(`/api/hermes/sessions/${sessionId}/end`, { method: 'POST' })
       if (!response.ok) {
-        throw new Error(await readApiErrorMessage(response, 'セッション終了APIエラー'))
+        // 通知する状態・条件: セッション終了APIエラー。
+        throw new Error(await readApiErrorMessage(response, t('app.errors.sessionEndApi')))
       }
 
       // 上流の終了を確認してから保存IDと表示を同時に外し、履歴が混ざる状態を作りません。
@@ -1193,7 +1219,8 @@ export default function App() {
       automaticMotionRef.current = null
       setMotionCommand((current) => ({ id: (current?.id ?? 0) + 1, action: 'stop' }))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '新しいセッションへ切り替えられませんでした。')
+      // 通知する状態・条件: 新しいセッションへ切り替えられませんでした。
+      setError(cause instanceof Error ? cause.message : t('app.errors.sessionNew'))
     } finally {
       setSessionResetting(false)
     }
@@ -1202,7 +1229,8 @@ export default function App() {
   /** 未終了状態と正式履歴を再確認してから、現在のブラウザを選択セッションへ接続します。 */
   const openExistingSession = async (sessionId: string): Promise<boolean> => {
     if (isBusy || sessionResetting || sessionSwitching || sessionId === hermesSessionId) return false
-    if (input.trim() && !window.confirm('入力途中の文章を破棄して、選択したセッションを開きますか？')) {
+    // 通知する状態・条件: 入力途中の文章を破棄して、選択したセッションを開きますか？。
+    if (input.trim() && !window.confirm(t('app.sessions.confirmOpen'))) {
       return false
     }
 
@@ -1211,28 +1239,34 @@ export default function App() {
       // 一覧表示後に別操作で終了していないか、切り替え直前の正本で再確認します。
       const sessionResponse = await fetch(`/api/hermes/sessions/${sessionId}`)
       if (!sessionResponse.ok) {
-        throw new Error(await readApiErrorMessage(sessionResponse, 'セッション取得APIエラー'))
+        // 通知する状態・条件: セッション取得APIエラー。
+        throw new Error(await readApiErrorMessage(sessionResponse, t('app.errors.sessionGetApi')))
       }
       const sessionData = await sessionResponse.json() as Record<string, unknown>
       const rawSession = sessionData.session
       if (!rawSession || typeof rawSession !== 'object' || !('ended_at' in rawSession)) {
-        throw new Error('セッション状態の応答形式が正しくありません。')
+        // セッション状態の形式異常を利用者へ知らせます。
+        throw new Error(t('app.errors.sessionStateFormat'))
       }
       const session = readSessionSummary(rawSession)
       if (!session || session.id !== sessionId) {
-        throw new Error('セッション情報の応答形式が正しくありません。')
+        // セッション情報の形式異常を利用者へ知らせます。
+        throw new Error(t('app.errors.sessionInfoFormat'))
       }
       if (session.endedAt !== null) {
-        throw new Error('このセッションは既に終了しています。履歴の閲覧だけが可能です。')
+        // 通知する状態・条件: このセッションは既に終了しています。
+        throw new Error(t('app.sessions.endedReadOnly'))
       }
 
       const messagesResponse = await fetch(`/api/hermes/sessions/${sessionId}/messages`)
       if (!messagesResponse.ok) {
-        throw new Error(await readApiErrorMessage(messagesResponse, 'セッション履歴APIエラー'))
+        // 通知する状態・条件: セッション履歴APIエラー。
+        throw new Error(await readApiErrorMessage(messagesResponse, t('app.errors.sessionHistoryApi')))
       }
       const messagesData = await messagesResponse.json() as Record<string, unknown>
       if (!Array.isArray(messagesData.data)) {
-        throw new Error('セッション履歴の応答形式が正しくありません。')
+        // セッション履歴の形式異常を利用者へ知らせます。
+        throw new Error(t('app.errors.sessionHistoryFormat'))
       }
 
       // 履歴取得まで成功した時点でまとめて切り替え、旧会話と新会話の表示混在を防ぎます。
@@ -1246,8 +1280,7 @@ export default function App() {
   /** 終了済み履歴をHermesで分岐し、元を保存したまま新しい子セッションへ切り替えます。 */
   const continueEndedSession = async (sourceSessionId: string): Promise<boolean> => {
     if (isBusy || sessionResetting || sessionSwitching) return false
-    const draftNotice = input.trim() ? '\n\n入力途中の文章は破棄されます。' : ''
-    if (!window.confirm(`終了済みの会話を残したまま、その続きとなる新しいセッションを作成しますか？${draftNotice}`)) {
+    if (!window.confirm(t(input.trim() ? 'app.sessions.confirmContinueDiscardDraft' : 'app.sessions.confirmContinue'))) {
       return false
     }
 
@@ -1255,12 +1288,14 @@ export default function App() {
     try {
       const forkResponse = await fetch(`/api/hermes/sessions/${sourceSessionId}/fork`, { method: 'POST' })
       if (!forkResponse.ok) {
-        throw new Error(await readApiErrorMessage(forkResponse, 'セッション分岐APIエラー'))
+        // 通知する状態・条件: セッション分岐APIエラー。
+        throw new Error(await readApiErrorMessage(forkResponse, t('app.errors.sessionForkApi')))
       }
       const forkData = await forkResponse.json() as Record<string, unknown>
       const rawFork = forkData.session
       if (!rawFork || typeof rawFork !== 'object' || !('ended_at' in rawFork)) {
-        throw new Error('分岐セッションの応答形式が正しくありません。')
+        // 分岐セッションの形式異常を利用者へ知らせます。
+        throw new Error(t('app.errors.sessionForkFormat'))
       }
       const fork = readSessionSummary(rawFork)
       if (
@@ -1269,16 +1304,19 @@ export default function App() {
         || fork.parentSessionId !== sourceSessionId
         || fork.endedAt !== null
       ) {
-        throw new Error('分岐セッションの親子関係または状態が正しくありません。')
+        // 通知する状態・条件: 分岐セッションの親子関係または状態が正しくありません。
+        throw new Error(t('app.errors.sessionForkRelation'))
       }
 
       const messagesResponse = await fetch(`/api/hermes/sessions/${fork.id}/messages`)
       if (!messagesResponse.ok) {
-        throw new Error(await readApiErrorMessage(messagesResponse, '分岐セッション履歴APIエラー'))
+        // 通知する状態・条件: 分岐セッション履歴APIエラー。
+        throw new Error(await readApiErrorMessage(messagesResponse, t('app.errors.sessionForkHistoryApi')))
       }
       const messagesData = await messagesResponse.json() as Record<string, unknown>
       if (!Array.isArray(messagesData.data)) {
-        throw new Error('分岐セッション履歴の応答形式が正しくありません。')
+        // 分岐セッション履歴の形式異常を利用者へ知らせます。
+        throw new Error(t('app.errors.sessionForkHistoryFormat'))
       }
 
       activateSession(fork.id, readSessionMessages(messagesData.data))
@@ -1295,14 +1333,17 @@ export default function App() {
     const loadUiDefaults = async () => {
       try {
         const response = await fetch('/api/ui-settings', { signal: controller.signal })
-        if (!response.ok) throw new Error(await readApiErrorMessage(response, 'UI設定取得APIエラー'))
+        // ここで中断する条件: UI設定取得APIエラー。
+        if (!response.ok) throw new Error(await readApiErrorMessage(response, t('app.errors.settingsGetApi')))
         const loaded = readUiSettings(await response.json())
-        if (!loaded) throw new Error('UI設定APIの応答形式が正しくありません。')
+        // ここで中断する条件: UI設定APIの応答形式が正しくありません。
+        if (!loaded) throw new Error(t('app.errors.settingsGetFormat'))
         setServerUiSettings(loaded)
         setUiSettings(mergeUiSettings(loaded, uiOverridesRef.current))
       } catch (cause) {
         if (isAbortError(cause)) return
-        setSettingsError(cause instanceof Error ? cause.message : 'UI設定を取得できませんでした。')
+        // UI設定の取得失敗を利用者へ知らせます。
+        setSettingsError(cause instanceof Error ? cause.message : t('app.errors.settingsGet'))
       }
     }
 
@@ -1317,13 +1358,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // バックエンドへの接続失敗時に復旧方法を案内します。
     fetch('/api/health')
-      .then((response) => {
-        if (!response.ok) throw new Error(`接続確認APIエラー: ${response.status}`)
+      .then(async (response) => {
+        // ここで中断する条件: 接続確認APIエラー: 対象値。
+        if (!response.ok) throw new Error(await readResponseMessage(response, t('app.errors.healthStatus', { status: response.status })))
         return response.json()
       })
       .then((data: Health) => setHealth(data))
-      .catch(() => setHealthError('バックエンドへ接続できません。FastAPIを起動してから再読み込みしてください。'))
+      .catch(() => setHealthError(t('app.errors.backendUnavailable')))
   }, [])
 
   useEffect(() => {
@@ -1332,21 +1375,22 @@ export default function App() {
 
     // 再読み込み後はブラウザの古い表示ではなく、Hermes SessionDBの正式履歴を復元します。
     fetch(`/api/hermes/sessions/${hermesSessionId}/messages`, { signal: controller.signal })
-      .then((response) => {
+      .then(async (response) => {
         if (response.status === 404) {
           sessionStorage.removeItem(HERMES_SESSION_STORAGE_KEY)
           clearActiveRun()
           setHermesSessionId(null)
           return null
         }
-        if (!response.ok) throw new Error(`セッション履歴APIエラー: ${response.status}`)
+        // ここで中断する条件: セッション履歴APIエラー: 対象値。
+        if (!response.ok) throw new Error(await readResponseMessage(response, t('app.errors.sessionHistoryStatus', { status: response.status })))
         return response.json()
       })
       .then((data) => {
         if (data) setMessages(readSessionMessages(data.data))
       })
       .catch((cause) => {
-        if (!isAbortError(cause)) setError('Hermesのセッション履歴を取得できませんでした。')
+        if (!isAbortError(cause)) setError(t('app.errors.sessionHistoryFetch'))
       })
 
     return () => controller.abort()
@@ -1385,7 +1429,8 @@ export default function App() {
     setToolTimeline([])
     setApprovalRequest(null)
     setError('')
-    setRecoveryNotice('実行中だったHermesの作業へ再接続しています…')
+    // 通知する状態・条件: 実行中だったHermesの作業へ再接続しています…。
+    setRecoveryNotice(t('app.recovery.reconnecting'))
 
     /** StrictModeの再実行や利用者の中断後に、古い復元処理が画面を上書きしないよう確認します。 */
     const isCurrentRecovery = () => (
@@ -1400,22 +1445,26 @@ export default function App() {
         `/api/hermes/sessions/${encodeURIComponent(storedRun.sessionId)}/messages`,
         { signal: controller.signal },
       )
-      if (!response.ok) throw new Error(`セッション履歴APIエラー: ${response.status}`)
+      // ここで中断する条件: セッション履歴APIエラー: 対象値。
+      if (!response.ok) throw new Error(await readResponseMessage(response, t('app.errors.sessionHistoryStatus', { status: response.status })))
       const data = await response.json() as Record<string, unknown>
-      if (!Array.isArray(data.data)) throw new Error('セッション履歴の応答形式が正しくありません。')
+      // ここで中断する条件: セッション履歴の応答形式が正しくありません。
+      if (!Array.isArray(data.data)) throw new Error(t('app.errors.sessionHistoryFormat'))
       if (isCurrentRecovery()) setMessages(readSessionMessages(data.data))
     }
 
     /** 保存済みRunが失われた場合も送信欄を塞がず、取得可能な正式履歴へ戻します。 */
+    // 通知する状態・条件: HermesからRun状態を取得できないため、取得可能な正式会話履歴へ戻りました。
     const releaseLostRun = async (
-      notice = 'HermesからRun状態を取得できないため、取得可能な正式会話履歴へ戻りました。',
+      notice = t('app.recovery.runUnavailable'),
     ) => {
       clearActiveRun(storedRun.runId)
       try {
         await syncFormalHistory()
       } catch (cause) {
         if (!isAbortError(cause) && isCurrentRecovery()) {
-          setError('Hermesのセッション履歴を取得できませんでした。')
+          // Hermesのセッション履歴の取得失敗を利用者へ知らせます。
+          setError(t('app.errors.sessionHistoryFetch'))
         }
       }
       if (!isCurrentRecovery()) return
@@ -1446,11 +1495,13 @@ export default function App() {
             return
           }
           if (!statusResponse.ok) {
-            throw new Error(`Hermes Run状態APIエラー: ${statusResponse.status}`)
+            // 通知する状態・条件: Hermes Run状態APIエラー: 対象値。
+            throw new Error(t('app.errors.runStatus', { status: statusResponse.status }))
           }
           const statusData = await statusResponse.json() as Record<string, unknown>
           if (statusData.run_id !== storedRun.runId || statusData.session_id !== storedRun.sessionId) {
-            await releaseLostRun('保存済みRunとHermesの実行状態が一致しないため、正式な会話履歴へ戻りました。')
+            // 通知する状態・条件: 保存済みRunとHermesの実行状態が一致しないため、正式な会話履歴へ戻りました。
+            await releaseLostRun(t('app.recovery.runMismatch'))
             return
           }
 
@@ -1474,11 +1525,13 @@ export default function App() {
             return
           }
           if (!eventsResponse.ok) {
-            throw new Error(`Hermes RunイベントAPIエラー: ${eventsResponse.status}`)
+            // 通知する状態・条件: Hermes RunイベントAPIエラー: 対象値。
+            throw new Error(t('app.errors.runEventsStatus', { status: eventsResponse.status }))
           }
           if (!connectedOnce && !limitedRecovery) {
             connectedOnce = true
-            setRecoveryNotice('実行中の作業へ再接続しました。再読み込み前の音声は再生しません。')
+            // 通知する状態・条件: 実行中の作業へ再接続しました。
+            setRecoveryNotice(t('app.recovery.reconnected'))
           }
 
           await consumeSse(eventsResponse, ({ event: eventName, data }) => {
@@ -1497,7 +1550,8 @@ export default function App() {
           }
         } catch (cause) {
           if (!isCurrentRecovery() || isAbortError(cause)) return
-          setRecoveryNotice('Hermesの作業へ再接続できません。数秒後に再試行します…')
+          // 通知する状態・条件: Hermesの作業へ再接続できません。
+          setRecoveryNotice(t('app.recovery.retrying'))
           await waitForReconnect(2000, controller.signal)
         }
       }
@@ -1509,7 +1563,8 @@ export default function App() {
         await syncFormalHistory()
       } catch (cause) {
         if (!isAbortError(cause) && isCurrentRecovery()) {
-          setError('作業は終了しましたが、Hermesの正式履歴を取得できませんでした。')
+          // 作業は終了しましたが、Hermesの正式履歴の取得失敗を利用者へ知らせます。
+          setError(t('app.recovery.completedHistoryUnavailable'))
         }
       }
       if (!isCurrentRecovery()) return
@@ -1519,11 +1574,12 @@ export default function App() {
       setAvatarState(terminalState === 'failed' ? 'error' : 'idle')
       automaticMotionRef.current = null
       setMotionCommand((current) => ({ id: (current?.id ?? 0) + 1, action: 'stop' }))
+      // 通知する状態・条件: 再接続したHermesの作業が完了しました。
       setRecoveryNotice(
         terminalState === 'completed'
-          ? '再接続したHermesの作業が完了しました。'
+          ? t('app.recovery.completed')
           : terminalState === 'stopped'
-            ? '再接続したHermesの作業は停止しました。'
+            ? t('app.recovery.stopped')
             : '',
       )
     }
@@ -1597,8 +1653,9 @@ export default function App() {
         // 成功応答の形式検査または失敗時の状態コード表示を、同じ後続処理で行います。
       }
       if (!response.ok) {
-        let message = `承認APIエラー: ${response.status}`
-        if (typeof responseData.detail === 'string') message = responseData.detail
+        // 通知する状態・条件: 承認APIエラー: 対象値。
+        let message = t('app.errors.approvalStatus', { status: response.status })
+        message = readMessage(responseData, message)
         throw new Error(message)
       }
 
@@ -1610,11 +1667,12 @@ export default function App() {
       setAgentRunState(nextState)
       setConversationActivityPhase(activityPhaseForRunState(nextState))
     } catch (cause) {
+      // 通知する状態・条件: 承認回答を送信できませんでした。
       setApprovalRequest((current) => current?.id === request.id
         ? {
             ...current,
             status: 'pending',
-            error: cause instanceof Error ? cause.message : '承認回答を送信できませんでした。',
+            error: cause instanceof Error ? cause.message : t('app.errors.approvalSubmit'),
           }
         : current)
     }
@@ -1736,7 +1794,8 @@ export default function App() {
       const sampleRate = typeof data.sample_rate === 'number' ? data.sample_rate : 0
       if (!utteranceId || sampleRate < 8_000 || sampleRate > 96_000) {
         speechFailed = true
-        setError('音声チャンクの情報が不足しています。テキスト応答は利用できます。')
+        // 通知する状態・条件: 音声チャンクの情報が不足しています。
+        setError(t('app.errors.audioChunkMissing'))
         return
       }
       const request: SpeechRequest = {
@@ -1748,11 +1807,13 @@ export default function App() {
         expression: readSpeechExpression(data),
       }
       if (session.speechStopped) {
-        void notifySpeech('speech.cancelled', request, { reason: '利用者が読み上げを停止しました' })
+        // 通知する状態・条件: 利用者が読み上げを停止しました。
+        void notifySpeech('speech.cancelled', request, { reason: t('app.errors.speechInterrupted') })
         return
       }
       if (!isCurrentSession()) {
-        void notifySpeech('speech.cancelled', request, { reason: '利用者が会話を中断しました' })
+        // 通知する状態・条件: 利用者が会話を中断しました。
+        void notifySpeech('speech.cancelled', request, { reason: t('app.errors.conversationInterrupted') })
         return
       }
       const playback = createPcmPlayback(
@@ -1781,14 +1842,17 @@ export default function App() {
           const result = await playback.play()
           if (result.status !== 'failed' || !isCurrentSession() || !result.error) return
           speechFailed = true
-          setError(`${result.error} テキスト応答は利用できます。`)
+          // 通知する状態・条件: 対象値 テキスト応答は利用できます。
+          setError(t('app.errors.textAvailable', { detail: result.error }))
         } catch (cause) {
           session.pendingSpeech.delete(utteranceId)
           if (!isCurrentSession()) return
-          const reason = cause instanceof Error ? cause.message : '音声を再生できませんでした。'
+          // 音声の再生失敗を利用者へ知らせます。
+          const reason = cause instanceof Error ? cause.message : t('app.errors.audioPlay')
           speechFailed = true
           void notifySpeech('speech.failed', request, { reason })
-          setError(`${reason} テキスト応答は利用できます。`)
+          // 通知する状態・条件: 対象値 テキスト応答は利用できます。
+          setError(t('app.errors.textAvailable', { detail: reason }))
         }
       })
     }
@@ -1799,7 +1863,8 @@ export default function App() {
       const utteranceId = typeof data.utterance_id === 'string' ? data.utterance_id : ''
       if (!audioUrl || !utteranceId) {
         speechFailed = true
-        setError('音声チャンクの情報が不足しています。テキスト応答は利用できます。')
+        // 通知する状態・条件: 音声チャンクの情報が不足しています。
+        setError(t('app.errors.audioChunkMissing'))
         return
       }
 
@@ -1812,11 +1877,13 @@ export default function App() {
         expression: readSpeechExpression(data),
       }
       if (session.speechStopped) {
-        void notifySpeech('speech.cancelled', request, { reason: '利用者が読み上げを停止しました' })
+        // 通知する状態・条件: 利用者が読み上げを停止しました。
+        void notifySpeech('speech.cancelled', request, { reason: t('app.errors.speechInterrupted') })
         return
       }
       if (!isCurrentSession()) {
-        void notifySpeech('speech.cancelled', request, { reason: '利用者が会話を中断しました' })
+        // 通知する状態・条件: 利用者が会話を中断しました。
+        void notifySpeech('speech.cancelled', request, { reason: t('app.errors.conversationInterrupted') })
         return
       }
 
@@ -1839,15 +1906,18 @@ export default function App() {
           )
           if (result.status !== 'failed' || !isCurrentSession()) return
           speechFailed = true
-          setError(`${result.error} テキスト応答は利用できます。`)
+          // 通知する状態・条件: 対象値 テキスト応答は利用できます。
+          setError(t('app.errors.textAvailable', { detail: result.error }))
         } catch (cause) {
           // Web Audioの初期化例外でもキュー全体をrejectさせず、次文と画面復帰を継続します。
           session.pendingSpeech.delete(request.utteranceId)
           if (!isCurrentSession()) return
-          const reason = cause instanceof Error ? cause.message : '音声を再生できませんでした。'
+          // 音声の再生失敗を利用者へ知らせます。
+          const reason = cause instanceof Error ? cause.message : t('app.errors.audioPlay')
           speechFailed = true
           void notifySpeech('speech.failed', request, { reason })
-          setError(`${reason} テキスト応答は利用できます。`)
+          // 通知する状態・条件: 対象値 テキスト応答は利用できます。
+          setError(t('app.errors.textAvailable', { detail: reason }))
         }
       })
     }
@@ -1896,9 +1966,17 @@ export default function App() {
           if (session.runId) clearActiveRun(session.runId)
         } else if (eventName === 'text.delta') {
           setConversationActivityPhase('composing')
-          setMessages((current) => current.map((message, index) =>
-            index === current.length - 1 ? { ...message, content: message.content + String(data.delta ?? '') } : message,
-          ))
+          // アプリの無応答案内を別メッセージにし、会話本文の翻訳と混同しません。
+          if (typeof data.message_key === 'string') {
+            setMessages((current) => [...current, {
+              role: 'assistant', content: String(data.delta ?? ''), message_key: data.message_key as string,
+              message_params: data.message_params as Record<string, unknown> | undefined,
+            }])
+          } else {
+            setMessages((current) => current.map((message, index) =>
+              index === current.length - 1 ? { ...message, content: message.content + String(data.delta ?? '') } : message,
+            ))
+          }
         } else if (eventName === 'status' && data.state === 'synthesizing') {
           // 先行再生が始まっていれば、遅れて届いた合成状態でモーションを戻しません。
           if (!session.speechStopped) {
@@ -1923,7 +2001,8 @@ export default function App() {
             } catch {
               playback.fail()
               speechFailed = true
-              setError('音声ストリームを再生できませんでした。テキスト応答は利用できます。')
+              // 音声ストリームの再生失敗を利用者へ知らせます。
+              setError(t('app.errors.audioStream'))
             }
           }
         } else if (eventName === 'speech.stream.done') {
@@ -1935,14 +2014,16 @@ export default function App() {
           // 手動停止後に完了した合成は意図した破棄なので、音声エラーとして表示しません。
           if (!session.speechStopped) {
             speechFailed = true
-            setError(String(data.reason ?? '音声を生成できませんでした。テキスト応答は利用できます。'))
+            // 音声の生成失敗を利用者へ知らせます。
+            setError(readMessage(data, t('app.errors.audioGenerateTextAvailable')))
           }
         } else if (eventName === 'error') {
           setAgentRunState('failed')
           setConversationActivityPhase('failed')
           setApprovalRequest(null)
           if (session.runId) clearActiveRun(session.runId)
-          throw new Error(String(data.message ?? '会話に失敗しました'))
+          // 会話の失敗を利用者へ知らせます。
+          throw new Error(readMessage(data, t('app.errors.conversation')))
         }
 
         if (eventState === 'failed' || eventState === 'stopped') {
@@ -1967,11 +2048,13 @@ export default function App() {
         const last = current[current.length - 1]
         return last?.role === 'assistant' && !last.content.trim() ? current.slice(0, -1) : current
       })
-      setError(cause instanceof Error ? cause.message : '会話に失敗しました')
+      // 会話の失敗を利用者へ知らせます。
+      setError(cause instanceof Error ? cause.message : t('app.errors.conversation'))
       if (session.runId && readActiveRun()?.runId === session.runId) {
         // Runの終端を確認できない通信障害では二重送信を防ぎ、再読み込みまたは明示停止を待ちます。
         keepRunForReload = true
-        setRecoveryNotice('Hermesの作業が続いている可能性があります。ページを再読み込みすると再接続します。')
+        // 通知する状態・条件: Hermesの作業が続いている可能性があります。
+        setRecoveryNotice(t('app.recovery.runMayContinue'))
       }
       setAvatarState('error')
       setConversationActivityPhase('failed')
@@ -2040,15 +2123,15 @@ export default function App() {
       <section className="avatar-panel">
         <header className="brand">
           <div className="brand-info">
-            <span className="eyebrow">AVATAR GATEWAY</span>
+            <span className="eyebrow">{t('app.brand')}</span>
             <span className="brand-runtime">
               {health
                 ? `${health.model} · ${
                     health.tts_enabled
-                      ? ttsProviderLabels[health.tts_provider] ?? health.tts_provider
-                      : '音声OFF'
+                      ? t(ttsProviderLabels[health.tts_provider] ?? health.tts_provider)
+                      : t('app.tts.off')
                   }`
-                : '接続確認中…'}
+                : t('app.connecting')}
             </span>
           </div>
           <span className={`status status-${avatarState}`}>
@@ -2059,7 +2142,7 @@ export default function App() {
                 <span />
               </span>
             )}
-            {stateLabels[avatarState]}
+            {t(stateLabels[avatarState])}
           </span>
         </header>
         <VrmStage
@@ -2093,14 +2176,14 @@ export default function App() {
           onVrmTouch={handleVrmTouch}
         />
         {localMotionPreviewEnabled && (
-          <div className="motion-controls" aria-label="VRMA動作確認">
+          <div className="motion-controls" aria-label={t('app.motion.panelLabel')}>
             {/* 状態の文字数が変わっても一覧を動かさないため、状態と停止操作を固定幅の左列にまとめます。 */}
             <div className="motion-controls-side">
               <span
                 className="motion-controls-status"
-                title={motionPlayback.state === 'idle' ? 'モーション待機' : `${motionPlayback.name ?? 'モーション'}: ${motionPlayback.state}`}
+                title={motionPlayback.state === 'idle' ? t('app.motion.idle') : t('app.motion.playbackStatus', { name: motionPlayback.name ?? t('app.motion.fallbackName'), state: motionPlayback.state })}
               >
-                {motionPlayback.state === 'idle' ? 'モーション待機' : `${motionPlayback.name ?? 'モーション'}: ${motionPlayback.state}`}
+                {motionPlayback.state === 'idle' ? t('app.motion.idle') : t('app.motion.playbackStatus', { name: motionPlayback.name ?? t('app.motion.fallbackName'), state: motionPlayback.state })}
               </span>
               <button
                 className="motion-controls-stop"
@@ -2108,8 +2191,7 @@ export default function App() {
                 onClick={stopMotion}
                 disabled={motionPlayback.state === 'idle'}
               >
-                停止
-              </button>
+                {t('app.motion.stop')}</button>
               <input
                 ref={localMotionInputRef}
                 type="file"
@@ -2128,12 +2210,12 @@ export default function App() {
                 disabled={isBusy}
                 onClick={() => localMotionInputRef.current?.click()}
               >
-                <span>VRMAを試す</span>
-                <small>登録されません</small>
+                <span>{t('app.motion.preview')}</span>
+                <small>{t('app.motion.notRegistered')}</small>
               </button>
             </div>
             {/* 一覧を3行ずつ縦に詰め、選択中のボタンは再クリックで停止できるようにします。 */}
-            <div className="motion-controls-scroll" aria-label="モーション一覧" tabIndex={0}>
+            <div className="motion-controls-scroll" aria-label={t('app.motion.listLabel')} tabIndex={0}>
               {availableMotions.map((motion) => {
                 const isCurrentMotion = motionPlayback.name === motion.label && (
                   motionPlayback.state === 'loading'
@@ -2157,13 +2239,13 @@ export default function App() {
           </div>
         )}
         {(localMotionError || motionPlayback.state === 'error') && (
-          <p className="motion-error">{localMotionError || (motionPlayback.state === 'error' ? motionPlayback.message : '')}</p>
+          <p className="motion-error">{translateMessage(localMotionError || (motionPlayback.state === 'error' ? motionPlayback.message : ''))}</p>
         )}
-        {healthError && <p className="notice">{healthError}</p>}
-        {health && !health.vrm_available && <p className="notice">VRMが見つかりません。同梱・ローカルのVRMとAVATAR_VRM_FILEを確認してください。</p>}
-        {health?.motion_catalog_error && <p className="notice">モーション設定エラー: {health.motion_catalog_error}</p>}
-        {missingMotions.length > 0 && <p className="notice">VRMAが見つかりません: {missingMotions.map((motion) => motion.file).join('、')}</p>}
-        {gazeSettings.enabled && <p className="gaze-live-status" role="status">{gazeStatus}</p>}
+        {healthError && <p className="notice">{translateMessage(healthError)}</p>}
+        {health && !health.vrm_available && <p className="notice">{t('app.motion.vrmMissing')}</p>}
+        {health?.motion_catalog_error && <p className="notice">{t('app.motion.catalogError', { detail: readMessage(health.motion_catalog_message, health.motion_catalog_error) })}</p>}
+        {missingMotions.length > 0 && <p className="notice">{t('app.motion.filesMissing', { files: missingMotions.map((motion) => motion.file).join(', ') })}</p>}
+        {gazeSettings.enabled && <p className="gaze-live-status" role="status">{translateMessage(gazeStatus)}</p>}
       </section>
 
       <section className="chat-panel">
@@ -2243,9 +2325,9 @@ export default function App() {
           <div className="conversation-mode-content">
             <ConversationActivityOverlay phase={conversationActivityPhase} tools={toolTimeline} />
             <ConversationModeOverlay messages={messages} avatarState={avatarState} gazeText={gazeTranscript} />
-            {recoveryNotice && <p className="recovery-message" role="status">{recoveryNotice}</p>}
+            {recoveryNotice && <p className="recovery-message" role="status">{translateMessage(recoveryNotice)}</p>}
             <ApprovalPanel request={approvalRequest} onRespond={respondToApproval} />
-            {error && <p className="error-message">{error}</p>}
+            {error && <p className="error-message">{translateMessage(error)}</p>}
           </div>
         ) : sessionHistoryOpen ? (
           <SessionHistoryPanel
@@ -2292,12 +2374,12 @@ export default function App() {
         ) : (
           <div className="conversation-scroll" ref={logRef}>
             <div className="messages" aria-live="polite">
-              {messages.length === 0 && !gazeTranscript.trim() && <div className="welcome"><h2>こんにちは</h2><p>下の欄からHermesへ話しかけてください。</p></div>}
+              {messages.length === 0 && !gazeTranscript.trim() && <div className="welcome"><h2>{t('app.conversation.welcomeTitle')}</h2><p>{t('app.conversation.welcomeDescription')}</p></div>}
               {splitGatewayMessages(messages).map((message) => (
                 <article className={`message ${message.role}`} key={message.key}>
-                  <span>{message.role === 'user' ? 'あなた' : 'Hermes'}</span>
+                  <span>{message.role === 'user' ? t('app.conversation.user') : t('app.conversation.assistant')}</span>
                   {message.role === 'assistant' ? (
-                    <MarkdownMessage content={message.content} />
+                    <MarkdownMessage content={messageContent(message)} />
                   ) : (
                     <p>{message.content || '…'}</p>
                   )}
@@ -2305,15 +2387,15 @@ export default function App() {
               ))}
               {gazeTranscript.trim() && (
                 <article className="message assistant">
-                  <span>Hermes</span>
+                  <span>{t('app.conversation.assistant')}</span>
                   <MarkdownMessage content={gazeTranscript} />
                 </article>
               )}
             </div>
-            {recoveryNotice && <p className="recovery-message" role="status">{recoveryNotice}</p>}
+            {recoveryNotice && <p className="recovery-message" role="status">{translateMessage(recoveryNotice)}</p>}
             <ToolTimeline runState={agentRunState} items={toolTimeline} />
             <ApprovalPanel request={approvalRequest} onRespond={respondToApproval} />
-            {error && <p className="error-message">{error}</p>}
+            {error && <p className="error-message">{translateMessage(error)}</p>}
           </div>
         )}
         {!sessionHistoryOpen && !agentResourcesOpen && !settingsOpen && (
@@ -2326,7 +2408,7 @@ export default function App() {
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleComposerKeyDown}
               aria-keyshortcuts="Control+Enter Meta+Enter"
-              placeholder="メッセージを入力"
+              placeholder={t('app.composer.placeholder')}
               rows={3}
               disabled={isBusy}
             />
@@ -2339,12 +2421,12 @@ export default function App() {
                   disabled={isBusy}
                   onClick={() => setConversationTextOpen((current) => !current)}
                 >
-                  {conversationTextVisible ? '文字入力を閉じる' : '文字入力'}
+                  {conversationTextVisible ? t('app.composer.closeText') : t('app.composer.openText')}
                 </button>
               )}
               <VoiceInputControl
                 available={health?.stt.available === true}
-                unavailableMessage={health?.stt.message ?? undefined}
+                unavailableMessage={health?.stt ? readMessage(health.stt, health.stt.message ?? '') : undefined}
                 conversationActive={conversationActive}
                 silenceMs={uiSettings.voice_input.silence_ms}
                 speechThreshold={uiSettings.voice_input.speech_threshold}
@@ -2355,17 +2437,15 @@ export default function App() {
                 <>
                 {health?.tts_enabled && !speechStoppedForRun && (
                   <button type="button" className="stop-speech" onClick={stopSpeech}>
-                    読み上げ停止
-                  </button>
+                    {t('app.composer.stopSpeech')}</button>
                 )}
-                <button type="button" className="stop-conversation" onClick={stopConversation} aria-label="Hermesの作業と音声を中断">
-                  作業を中断
-                </button>
+                <button type="button" className="stop-conversation" onClick={stopConversation} aria-label={t('app.composer.interruptLabel')}>
+                  {t('app.composer.interrupt')}</button>
                 </>
               ) : (
                 <button type="submit" className="send-button" disabled={!input.trim()}>
-                  <span>送信</span>
-                  <small className="send-shortcut" aria-hidden="true">Ctrl/⌘ + Enter</small>
+                  <span>{t('app.composer.send')}</span>
+                  <small className="send-shortcut" aria-hidden="true">{t('app.composer.shortcut')}</small>
                 </button>
               )}
             </div>
@@ -2384,7 +2464,7 @@ export default function App() {
           stopRef={gazeStopRef}
           onEnrolled={(enrollment) => {
             updateGazeSettings((current) => ({ ...current, enabled: true, enrollment }))
-            setGazeStatus('顔を登録しました')
+            setGazeStatus(t('app.gaze.enrolled'))
           }}
           onEnrollClose={() => setGazeEnrolling(false)}
           onStatus={setGazeStatus}

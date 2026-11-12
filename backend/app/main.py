@@ -1,5 +1,7 @@
 """会話・音声・VRM・Web UIを同一オリジンで提供するFastAPIアプリです。"""
 
+from .services.messages import UiMessageError, UiHttpError, message_payload, message_ref
+
 import asyncio
 import base64
 import json
@@ -38,8 +40,9 @@ from .services.model_selection import (
     public_model_catalog,
     selection_is_listed,
 )
+from .services.locales import list_locales
 from .services.generated_images import GeneratedImageStore
-from .services.hermes_diagnostics import hermes_diagnostic_notice
+from .services.hermes_diagnostics import EMPTY_RESPONSE_KEY, hermes_diagnostic_notice
 from .services.speech_backends import (
     OPENAI_PROVIDER,
     NoSpeechDetectedError,
@@ -133,6 +136,12 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Avatar Gateway", version="0.1.0", lifespan=_lifespan)
+@app.exception_handler(UiHttpError)
+async def localized_http_error(_request: Request, error: UiHttpError) -> JSONResponse:
+    """従来のdetailに加え、ブラウザが自分の言語で解決できる翻訳情報を返します。"""
+    return JSONResponse(error.payload, status_code=error.status_code, headers=error.headers)
+
+
 if settings.gateway_lan_mode:
     # LAN公開時はHostヘッダー攻撃を避け、利用者が明示した名前・IPだけを受け付けます。
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.gateway_allowed_hosts))
@@ -164,7 +173,7 @@ async def protect_gateway(request: Request, call_next):
         return await call_next(request)
     if not authenticate_basic_header(request.headers.get("Authorization"), settings):
         return JSONResponse(
-            {"detail": "Avatar Gatewayの認証が必要です"},
+            message_payload(UiMessageError(message_key='gateway.api.authenticationRequired'), 'detail'),
             status_code=401,
             headers={"WWW-Authenticate": 'Basic realm="Avatar Gateway", charset="UTF-8"'},
         )
@@ -172,7 +181,7 @@ async def protect_gateway(request: Request, call_next):
         request.headers.get("Origin"),
         request.headers.get("Host"),
     ):
-        return JSONResponse({"detail": "異なるオリジンからの操作は許可されていません"}, status_code=403)
+        return JSONResponse(message_payload(UiMessageError(message_key='gateway.api.originDenied'), 'detail'), status_code=403)
     return await call_next(request)
 
 
@@ -314,6 +323,9 @@ def _present_session_messages(
             # 本文なしのassistant記録はツール呼び出しを保持する内部項目なので、会話欄へ混ぜません。
             if not item["content"].strip():
                 continue
+            # アプリが作った無応答案内だけに印を付け、通常の会話本文は翻訳しません。
+            if hermes_diagnostic_notice(item["content"]):
+                item.update(message_ref(EMPTY_RESPONSE_KEY))
             content = _present_assistant_text(item["content"], motion_catalog)
             item["content"] = generated_image_store.present_assistant_images(
                 content,
@@ -342,7 +354,7 @@ async def _hermes_health() -> dict:
     if not settings.hermes_api_key:
         return {
             "status": "misconfigured",
-            "message": "HERMES_API_KEYが設定されていません",
+            **message_payload(UiMessageError(message_key='gateway.api.apiKeyMissing'), 'message'),
             "capabilities": None,
         }
 
@@ -353,14 +365,14 @@ async def _hermes_health() -> dict:
         logger.warning("Hermes capabilities unavailable: %s", exc)
         return {
             "status": "unavailable",
-            "message": str(exc),
+            **message_payload(exc),
             "capabilities": None,
         }
 
     missing = capabilities.missing_required_features
     return {
         "status": "incompatible" if missing else "ready",
-        "message": "必要なHermes機能が不足しています" if missing else None,
+        **(message_payload(UiMessageError(message_key="gateway.api.capabilitiesMissing")) if missing else {"message": None}),
         "capabilities": capabilities.to_public_dict(),
     }
 
@@ -368,10 +380,10 @@ async def _hermes_health() -> dict:
 def _raise_hermes_api_error(exc: HermesError) -> NoReturn:
     """安全化済みHermes例外を、利用者が対処できるHTTP状態へ変換します。"""
     if isinstance(exc, HermesSessionNotFoundError):
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise UiHttpError(status_code=404, error=exc) from exc
     if isinstance(exc, HermesConflictError):
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise UiHttpError(status_code=409, error=exc) from exc
+    raise UiHttpError(status_code=502, error=exc) from exc
 
 
 @app.get("/api/health")
@@ -395,6 +407,7 @@ async def health() -> dict:
             motion_catalog.generating_motion.name if motion_catalog.generating_motion else None
         ),
         "motion_catalog_error": motion_catalog.error,
+        "motion_catalog_message": motion_catalog.error_message,
     }
 
 
@@ -404,17 +417,21 @@ async def _read_limited_audio(request: Request) -> bytes:
     if raw_length:
         try:
             if int(raw_length) > settings.stt_max_audio_bytes:
-                raise HTTPException(status_code=413, detail="録音データが大きすぎます")
+                # 利用者へ通知する条件: 録音データが大きすぎます
+                raise UiHttpError(status_code=413, error=UiMessageError(message_key='gateway.api.recordingTooLarge'))
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Content-Lengthが正しくありません") from exc
+            # Content-Lengthの不正を通知します
+            raise UiHttpError(status_code=400, error=UiMessageError(message_key='gateway.api.invalidContentLength')) from exc
 
     audio = bytearray()
     async for chunk in request.stream():
         audio.extend(chunk)
         if len(audio) > settings.stt_max_audio_bytes:
-            raise HTTPException(status_code=413, detail="録音データが大きすぎます")
+            # 利用者へ通知する条件: 録音データが大きすぎます
+            raise UiHttpError(status_code=413, error=UiMessageError(message_key='gateway.api.recordingTooLarge'))
     if not audio:
-        raise HTTPException(status_code=400, detail="録音データがありません")
+        # 録音データの欠落を通知します
+        raise UiHttpError(status_code=400, error=UiMessageError(message_key='gateway.api.recordingEmpty'))
     return bytes(audio)
 
 
@@ -422,10 +439,12 @@ async def _read_limited_audio(request: Request) -> bytes:
 async def transcribe_audio(request: Request) -> dict:
     """同一オリジンのブラウザ録音を受け取り、既存会話へ渡せる文字列を返します。"""
     if not settings.stt_enabled:
-        raise HTTPException(status_code=503, detail="音声入力は無効です")
+        # 利用者へ通知する条件: 音声入力は無効です
+        raise UiHttpError(status_code=503, error=UiMessageError(message_key='gateway.api.voiceInputDisabled'))
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in _SUPPORTED_AUDIO_TYPES:
-        raise HTTPException(status_code=415, detail="対応していない録音形式です")
+        # 利用者へ通知する条件: 対応していない録音形式です
+        raise UiHttpError(status_code=415, error=UiMessageError(message_key='gateway.api.recordingUnsupported'))
 
     audio = await _read_limited_audio(request)
     try:
@@ -436,17 +455,17 @@ async def transcribe_audio(request: Request) -> dict:
             len(audio),
             media_type,
         )
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise UiHttpError(status_code=422, error=exc) from exc
     except TranscriptionUnavailableError as exc:
         logger.warning("transcription unavailable: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise UiHttpError(status_code=503, error=exc) from exc
     except TranscriptionError as exc:
         logger.warning(
             "transcription rejected: audio decode or inference failed (bytes=%s, media_type=%s)",
             len(audio),
             media_type,
         )
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise UiHttpError(status_code=422, error=exc) from exc
 
 
 @app.get("/api/hermes/sessions")
@@ -561,7 +580,7 @@ async def list_hermes_models() -> dict:
         selected = _model_selection_store().load()
         catalog = public_model_catalog(await HermesClient(settings).list_model_options())
     except ModelSelectionError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise UiHttpError(status_code=500, error=exc) from exc
     except HermesError as exc:
         _raise_hermes_api_error(exc)
     return {
@@ -577,7 +596,8 @@ async def list_hermes_models() -> dict:
 async def select_hermes_model(request: Request, body: HermesModelSelectRequest) -> dict:
     """選んだモデルを保存し、進行中のセッションがあればHermesへ固定します。"""
     if not is_same_origin_request(request.headers.get("Origin"), request.headers.get("Host")):
-        raise HTTPException(status_code=403, detail="異なるオリジンからの設定変更は許可されていません")
+        # 利用者へ通知する条件: 異なるオリジンからの設定変更は許可されていません
+        raise UiHttpError(status_code=403, error=UiMessageError(message_key='gateway.api.settingsOriginDenied'))
     store = _model_selection_store()
     client = HermesClient(settings)
     try:
@@ -586,17 +606,19 @@ async def select_hermes_model(request: Request, body: HermesModelSelectRequest) 
             locked = await _lock_default_session_model(client, body.session_id)
             return {"selected": None, "model": settings.hermes_model, "session_locked": locked}
         if not body.model or not body.provider:
-            raise HTTPException(status_code=422, detail="モデルとプロバイダを指定してください")
+            # 利用者へ通知する条件: モデルとプロバイダを指定してください
+            raise UiHttpError(status_code=422, error=UiMessageError(message_key='gateway.api.modelAndProviderRequired'))
         catalog = public_model_catalog(await client.list_model_options())
         if not selection_is_listed(catalog, body.model, body.provider):
-            raise HTTPException(status_code=422, detail="指定されたモデルはHermesの一覧にありません")
+            # 利用者へ通知する条件: 指定されたモデルはHermesの一覧にありません
+            raise UiHttpError(status_code=422, error=UiMessageError(message_key='gateway.api.modelNotListed'))
         saved = store.save(SelectedHermesModel(model=body.model, provider=body.provider))
         locked = False
         if body.session_id:
             await client.lock_session_model(body.session_id, saved.model, saved.provider)
             locked = True
     except ModelSelectionError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise UiHttpError(status_code=500, error=exc) from exc
     except HermesError as exc:
         _raise_hermes_api_error(exc)
     return {"selected": saved.model_dump(), "model": saved.model, "session_locked": locked}
@@ -861,12 +883,13 @@ async def stream_hermes_conversation(
                         diagnostic_response_seen = True
                         display_notice = f"\n\n{completed_diagnostic}" if full_text else completed_diagnostic
                         full_text += display_notice
-                        await event_queue.put(("text.delta", {"delta": display_notice}))
+                        await event_queue.put(("text.delta", {"delta": display_notice, **message_ref(EMPTY_RESPONSE_KEY)}))
 
                     if event_name == "agent.failed":
-                        raise HermesError(str(event_data.get("message") or "Hermes Runに失敗しました"))
+                        raise HermesError(event_data.get("message"), message_key=event_data.get("message_key"), message_params=event_data.get("message_params"))
                     if event_name == "agent.stopped":
-                        raise HermesError("Hermes Runは停止されました")
+                        # 利用者へ通知する条件: Hermes Runは停止されました
+                        raise HermesError(message_key='gateway.api.runStopped')
                     if event_name == "session.messages":
                         session_messages_event = event_data
                         continue
@@ -930,13 +953,13 @@ async def stream_hermes_conversation(
                     await event_queue.put(("status", {"state": "synthesizing"}))
             except HermesError as exc:
                 generation_failed = True
-                await event_queue.put(("error", {"message": str(exc)}))
+                await event_queue.put(("error", {**message_payload(exc)}))
             except asyncio.CancelledError:
                 raise
             except Exception:
                 generation_failed = True
                 logger.exception("conversation text producer failed")
-                await event_queue.put(("error", {"message": "会話ストリームの処理に失敗しました"}))
+                await event_queue.put(("error", {**message_payload(UiMessageError(message_key='gateway.api.conversationStreamFailed'), 'message')}))
             finally:
                 await speech_queue.put(None)
 
@@ -987,7 +1010,7 @@ async def stream_hermes_conversation(
                                 await event_queue.put(("speech.failed", {
                                     "sequence_id": sequence_id,
                                     "segment_index": segment_index,
-                                    "reason": "音声ストリームを開始した後に中断されました",
+                                    **message_payload(UiMessageError(message_key='gateway.api.audioStreamInterrupted'), 'reason'),
                                 }))
                                 return "failed"
                             except TtsError as exc:
@@ -996,7 +1019,7 @@ async def stream_hermes_conversation(
                                 await event_queue.put(("speech.failed", {
                                     "sequence_id": sequence_id,
                                     "segment_index": segment_index,
-                                    "reason": str(exc),
+                                    **message_payload(exc, "reason"),
                                 }))
                                 return "failed"
 
@@ -1043,7 +1066,7 @@ async def stream_hermes_conversation(
                                 await event_queue.put(("speech.failed", {
                                     "sequence_id": sequence_id,
                                     "segment_index": segment_index,
-                                    "reason": str(exc),
+                                    **message_payload(exc, "reason"),
                                 }))
                 else:
                     # 無効時も終端を消費し、同じ終了制御を利用します。
@@ -1062,7 +1085,7 @@ async def stream_hermes_conversation(
                 raise
             except Exception:
                 logger.exception("conversation speech producer failed")
-                await event_queue.put(("speech.failed", {"reason": "音声合成処理に失敗しました"}))
+                await event_queue.put(("speech.failed", {**message_payload(UiMessageError(message_key='gateway.api.speechSynthesisFailed'), 'reason')}))
         producers = [
             asyncio.create_task(produce_text()),
             asyncio.create_task(produce_speech()),
@@ -1109,7 +1132,8 @@ async def stream_hermes_conversation(
 async def cancel_speech_sequence(sequence_id: str) -> JSONResponse:
     """Hermesの文章生成を残したまま、指定応答の未完了TTSワーカーだけを中断します。"""
     if len(sequence_id) != 32 or any(character not in "0123456789abcdef" for character in sequence_id):
-        raise HTTPException(status_code=422, detail="音声シーケンスIDが不正です")
+        # 利用者へ通知する条件: 音声シーケンスIDが不正です
+        raise UiHttpError(status_code=422, error=UiMessageError(message_key='gateway.api.invalidSpeechSequenceId'))
 
     worker = speech_sequence_workers.get(sequence_id)
     cancelled = worker is not None and not worker.done()
@@ -1124,7 +1148,16 @@ async def get_ui_settings() -> dict:
     try:
         return _ui_settings_store().load().model_dump(mode="json")
     except UiSettingsError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise UiHttpError(status_code=500, error=exc) from exc
+
+
+@app.get("/api/locales")
+async def get_locales() -> dict:
+    """再ビルドせず追加した言語も、表示名と翻訳をまとめてブラウザへ渡します。"""
+    return {"data": list_locales(
+        settings.bundled_assets_dir / "locales",
+        settings.local_assets_dir / "locales",
+    )}
 
 
 @app.get("/api/backgrounds")
@@ -1136,18 +1169,19 @@ async def get_backgrounds() -> dict:
             settings.local_assets_dir / "backgrounds",
         )}
     except UiSettingsError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise UiHttpError(status_code=500, error=exc) from exc
 
 
 @app.put("/api/ui-settings")
 async def put_ui_settings(request: Request, value: UiSettings) -> dict:
     """同一オリジンから明示保存された現在値だけを、全ブラウザ用の既定値へ反映します。"""
     if not is_same_origin_request(request.headers.get("Origin"), request.headers.get("Host")):
-        raise HTTPException(status_code=403, detail="異なるオリジンからの設定変更は許可されていません")
+        # 利用者へ通知する条件: 異なるオリジンからの設定変更は許可されていません
+        raise UiHttpError(status_code=403, error=UiMessageError(message_key='gateway.api.settingsOriginDenied'))
     try:
         return _ui_settings_store().save(value).model_dump(mode="json")
     except UiSettingsError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise UiHttpError(status_code=500, error=exc) from exc
 
 
 @app.get("/api/gaze-speech")
@@ -1166,7 +1200,8 @@ async def claim_gaze_speech() -> dict:
         return {**gaze_store.status(), "spoken": False}
     if not settings.tts_enabled:
         await asyncio.to_thread(gaze_store.put_back, performance)
-        raise HTTPException(status_code=409, detail="音声合成が無効です")
+        # 利用者へ通知する条件: 音声合成が無効です
+        raise UiHttpError(status_code=409, error=UiMessageError(message_key='gateway.api.speechDisabled'))
     catalog = _load_motion_catalog()
     created: list[Path] = []
     beats_out: list[dict] = []
@@ -1198,7 +1233,8 @@ async def claim_gaze_speech() -> dict:
             except OSError as exc:
                 logger.warning("gaze speech cleanup failed for %s: %s", path, exc)
         await asyncio.to_thread(gaze_store.put_back, performance)
-        raise HTTPException(status_code=502, detail="視線発話の音声を準備できませんでした") from None
+        # 利用者へ通知する条件: 視線発話の音声を準備できませんでした
+        raise UiHttpError(status_code=502, error=UiMessageError(message_key='gateway.api.gazeSpeechUnavailable')) from None
     first = beats_out[0]
     return {
         **gaze_store.status(),

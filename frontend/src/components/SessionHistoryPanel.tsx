@@ -1,4 +1,5 @@
 /* 現在の送信先を変えず、Hermesに保存されたAvatar Gateway会話を閲覧するパネルです。 */
+import { messageContent, readResponseMessage, readMessage, t, useTranslation, translateMessage } from '../i18n'
 
 import { useEffect, useState } from 'react'
 
@@ -22,21 +23,21 @@ interface SessionHistoryPanelProps {
 
 /** Unix秒を利用者のローカル日時へ変換し、不明値を誤った1970年表示にしません。 */
 function formatSessionTime(value: number | null): string {
-  if (value === null) return '日時不明'
+  if (value === null) return t('history.unknownDate')
   const date = new Date(value * 1000)
-  return Number.isFinite(date.getTime()) ? dateFormatter.format(date) : '日時不明'
+  return Number.isFinite(date.getTime()) ? dateFormatter.format(date) : t('history.unknownDate')
 }
 
 /** タイトル未設定のセッションにも、内容から識別できる短い見出しを付けます。 */
 function sessionHeading(session: HermesSessionSummary): string {
-  return session.title ?? session.preview ?? `セッション ${session.id.slice(-8)}`
+  return session.title ?? session.preview ?? t('history.fallbackTitle', { id: session.id.slice(-8) })
 }
 
 /** Hermesの実額を優先し、未確定時だけ見積額を読みやすいドル表記にします。 */
 function formatSessionCost(session: HermesSessionSummary): string {
   const cost = session.actualCostUsd ?? session.estimatedCostUsd
-  if (cost === null || cost < 0) return 'コスト不明'
-  if (cost > 0 && cost < 0.0001) return '$0.0001未満'
+  if (cost === null || cost < 0) return t('history.unknownCost')
+  if (cost > 0 && cost < 0.0001) return t('history.costBelowMinimum')
   return `$${cost.toFixed(4)}`
 }
 
@@ -47,6 +48,7 @@ export default function SessionHistoryPanel({
   onOpenSession,
   onContinueSession,
 }: SessionHistoryPanelProps) {
+  useTranslation()
   const [sessions, setSessions] = useState<HermesSessionSummary[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -72,9 +74,11 @@ export default function SessionHistoryPanel({
         const response = await fetch(`/api/hermes/sessions?limit=${PAGE_SIZE}&offset=0`, {
           signal: controller.signal,
         })
-        if (!response.ok) throw new Error(`セッション一覧APIエラー: ${response.status}`)
+        // ここで中断する条件: セッション一覧APIエラー: 対象値。
+        if (!response.ok) throw new Error(await readResponseMessage(response, t('history.errors.listStatus', { status: response.status })))
         const page = readSessionPage(await response.json())
-        if (!page) throw new Error('セッション一覧の応答形式が正しくありません。')
+        // ここで中断する条件: セッション一覧の応答形式が正しくありません。
+        if (!page) throw new Error(t('history.errors.listFormat'))
         setSessions(page.sessions)
         setHasMore(page.hasMore)
         setSelectedSessionId((current) => {
@@ -86,7 +90,8 @@ export default function SessionHistoryPanel({
         })
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === 'AbortError') return
-        setListError(cause instanceof Error ? cause.message : 'セッション一覧を取得できませんでした。')
+        // セッション一覧の取得失敗を利用者へ知らせます。
+        setListError(cause instanceof Error ? cause.message : t('history.errors.list'))
       } finally {
         if (!controller.signal.aborted) setListLoading(false)
       }
@@ -112,13 +117,16 @@ export default function SessionHistoryPanel({
         const response = await fetch(`/api/hermes/sessions/${selectedSessionId}/messages`, {
           signal: controller.signal,
         })
-        if (!response.ok) throw new Error(`セッション履歴APIエラー: ${response.status}`)
+        // ここで中断する条件: セッション履歴APIエラー: 対象値。
+        if (!response.ok) throw new Error(await readResponseMessage(response, t('history.errors.historyStatus', { status: response.status })))
         const data = await response.json() as Record<string, unknown>
-        if (!Array.isArray(data.data)) throw new Error('セッション履歴の応答形式が正しくありません。')
+        // ここで中断する条件: セッション履歴の応答形式が正しくありません。
+        if (!Array.isArray(data.data)) throw new Error(t('history.errors.historyFormat'))
         setMessages(readSessionMessages(data.data))
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === 'AbortError') return
-        setHistoryError(cause instanceof Error ? cause.message : 'セッション履歴を取得できませんでした。')
+        // セッション履歴の取得失敗を利用者へ知らせます。
+        setHistoryError(cause instanceof Error ? cause.message : t('history.errors.history'))
       } finally {
         if (!controller.signal.aborted) setHistoryLoading(false)
       }
@@ -135,16 +143,19 @@ export default function SessionHistoryPanel({
     setListError('')
     try {
       const response = await fetch(`/api/hermes/sessions?limit=${PAGE_SIZE}&offset=${sessions.length}`)
-      if (!response.ok) throw new Error(`セッション一覧APIエラー: ${response.status}`)
+      // ここで中断する条件: セッション一覧APIエラー: 対象値。
+      if (!response.ok) throw new Error(await readResponseMessage(response, t('history.errors.listStatus', { status: response.status })))
       const page = readSessionPage(await response.json())
-      if (!page) throw new Error('セッション一覧の応答形式が正しくありません。')
+      // ここで中断する条件: セッション一覧の応答形式が正しくありません。
+      if (!page) throw new Error(t('history.errors.listFormat'))
       setSessions((current) => {
         const knownIds = new Set(current.map((session) => session.id))
         return [...current, ...page.sessions.filter((session) => !knownIds.has(session.id))]
       })
       setHasMore(page.hasMore)
     } catch (cause) {
-      setListError(cause instanceof Error ? cause.message : '追加のセッションを取得できませんでした。')
+      // 追加のセッションの取得失敗を利用者へ知らせます。
+      setListError(cause instanceof Error ? cause.message : t('history.errors.loadMore'))
     } finally {
       setMoreLoading(false)
     }
@@ -158,7 +169,8 @@ export default function SessionHistoryPanel({
       if (selectedSession.endedAt === null) await onOpenSession(selectedSession.id)
       else await onContinueSession(selectedSession.id)
     } catch (cause) {
-      setOpenError(cause instanceof Error ? cause.message : 'セッションを切り替えられませんでした。')
+      // セッションの切り替えが完了しなかったことを知らせます。
+      setOpenError(cause instanceof Error ? cause.message : t('history.errors.switch'))
     }
   }
 
@@ -175,8 +187,7 @@ export default function SessionHistoryPanel({
     ) return
     const heading = sessionHeading(selectedSession)
     if (!window.confirm(
-      `「${heading}」をHermesから完全に削除しますか？\n\n`
-      + 'この操作は取り消せません。分岐した子セッションは削除されませんが、親への参照が外れる場合があります。',
+      t('history.confirmDelete', { title: heading }),
     )) return
 
     setDeletingSessionId(selectedSession.id)
@@ -184,10 +195,11 @@ export default function SessionHistoryPanel({
     try {
       const response = await fetch(`/api/hermes/sessions/${selectedSession.id}`, { method: 'DELETE' })
       if (!response.ok) {
-        let message = `セッション削除APIエラー: ${response.status}`
+        // 履歴を削除できない場合、APIが返した理由を優先して知らせます。
+        let message = t('history.errors.deleteStatus', { status: response.status })
         try {
           const data = await response.json() as Record<string, unknown>
-          if (typeof data.detail === 'string') message = data.detail
+          message = readMessage(data, message)
         } catch {
           // JSON以外のエラーでも状態コードによる案内を残します。
         }
@@ -195,34 +207,36 @@ export default function SessionHistoryPanel({
       }
       const data = await response.json() as Record<string, unknown>
       if (data.id !== selectedSession.id || data.deleted !== true) {
-        throw new Error('セッション削除の応答形式が正しくありません。')
+        // セッション削除の形式異常を利用者へ知らせます。
+        throw new Error(t('history.errors.deleteFormat'))
       }
       const remaining = sessions.filter((session) => session.id !== selectedSession.id)
       setSessions(remaining)
       setSelectedSessionId(remaining[0]?.id ?? null)
       setMessages([])
     } catch (cause) {
-      setDeleteError(cause instanceof Error ? cause.message : 'セッションを削除できませんでした。')
+      // 履歴削除の失敗を通知し、画面に履歴を残します。
+      setDeleteError(cause instanceof Error ? cause.message : t('history.errors.delete'))
     } finally {
       setDeletingSessionId(null)
     }
   }
 
   return (
-    <section className="session-history" aria-label="セッション履歴">
+    <section className="session-history" aria-label={t('history.title')}>
       <aside className="session-list-panel">
         <header className="session-list-header">
           <div>
-            <span>HERMES SESSIONS</span>
-            <h2>セッション履歴</h2>
+            <span>{t('history.eyebrow')}</span>
+            <h2>{t('history.title')}</h2>
           </div>
-          <span className="session-count">{sessions.length}{hasMore ? '件以上' : '件'}</span>
+          <span className="session-count">{t(hasMore ? 'history.countAtLeast' : 'history.count', { count: sessions.length })}</span>
         </header>
 
         <div className="session-list">
-          {listLoading && <p className="session-placeholder">セッションを読み込み中…</p>}
+          {listLoading && <p className="session-placeholder">{t('history.loadingSessions')}</p>}
           {!listLoading && sessions.length === 0 && !listError && (
-            <p className="session-placeholder">保存済みセッションはありません。</p>
+            <p className="session-placeholder">{t('history.noSessions')}</p>
           )}
           {sessions.map((session) => {
             const selected = session.id === selectedSessionId
@@ -245,12 +259,12 @@ export default function SessionHistoryPanel({
                 {session.title && session.preview && <span className="session-list-preview">{session.preview}</span>}
                 <span className="session-list-meta">
                   <span>{formatSessionTime(session.lastActive ?? session.startedAt)}</span>
-                  <span>{session.messageCount}メッセージ</span>
+                  <span>{t('history.messageCount', { count: session.messageCount })}</span>
                 </span>
                 <span className="session-list-statuses">
-                  {current && <span className="session-current-badge">現在</span>}
+                  {current && <span className="session-current-badge">{t('history.current')}</span>}
                   <span className={session.endedAt === null ? 'session-open-badge' : 'session-ended-badge'}>
-                    {session.endedAt === null ? '継続中' : '終了済み'}
+                    {session.endedAt === null ? t('history.active') : t('history.ended')}
                   </span>
                 </span>
               </button>
@@ -258,16 +272,16 @@ export default function SessionHistoryPanel({
           })}
           {hasMore && (
             <button type="button" className="session-load-more" disabled={moreLoading || sessionSwitching} onClick={() => void loadMore()}>
-              {moreLoading ? '読み込み中…' : 'さらに読み込む'}
+              {moreLoading ? t('history.loadingMore') : t('history.loadMore')}
             </button>
           )}
         </div>
 
         {listError && (
           <div className="session-list-error" role="alert">
-            <p>{listError}</p>
+            <p>{translateMessage(listError)}</p>
             {!listLoading && sessions.length === 0 && (
-              <button type="button" onClick={() => setReloadToken((current) => current + 1)}>再試行</button>
+              <button type="button" onClick={() => setReloadToken((current) => current + 1)}>{t('history.retry')}</button>
             )}
           </div>
         )}
@@ -278,19 +292,19 @@ export default function SessionHistoryPanel({
           <>
             <header className="session-history-header">
               <div>
-                <span>READ ONLY</span>
+                <span>{t('history.readOnly')}</span>
                 <h2>{sessionHeading(selectedSession)}</h2>
-                <p>{formatSessionTime(selectedSession.lastActive ?? selectedSession.startedAt)} · {selectedSession.messageCount}メッセージ · {selectedSession.toolCallCount}ツール実行</p>
+                <p>{t('history.summary', { time: formatSessionTime(selectedSession.lastActive ?? selectedSession.startedAt), messageCount: selectedSession.messageCount, toolCount: selectedSession.toolCallCount })}</p>
                 <p className="session-history-stats">
-                  入力 {selectedSession.inputTokens.toLocaleString()} · 出力 {selectedSession.outputTokens.toLocaleString()} · 推論 {selectedSession.reasoningTokens.toLocaleString()} tokens · API {selectedSession.apiCallCount}回 · {formatSessionCost(selectedSession)}
+                  {t('history.usage', { inputTokens: selectedSession.inputTokens.toLocaleString(), outputTokens: selectedSession.outputTokens.toLocaleString(), reasoningTokens: selectedSession.reasoningTokens.toLocaleString(), apiCallCount: selectedSession.apiCallCount, cost: formatSessionCost(selectedSession) })}
                 </p>
                 {selectedSession.parentSessionId && (
-                  <p className="session-parent">分岐元: …{selectedSession.parentSessionId.slice(-8)}</p>
+                  <p className="session-parent">{t('history.parent', { id: selectedSession.parentSessionId.slice(-8) })}</p>
                 )}
               </div>
               <div className="session-history-actions">
                 <span className={selectedSession.endedAt === null ? 'session-open-badge' : 'session-ended-badge'}>
-                  {selectedSession.endedAt === null ? '継続中' : '終了済み'}
+                  {selectedSession.endedAt === null ? t('history.active') : t('history.ended')}
                 </span>
                 <button
                   type="button"
@@ -298,12 +312,12 @@ export default function SessionHistoryPanel({
                   onClick={() => void useSelectedSession()}
                 >
                   {selectedSession.id === currentSessionId
-                    ? '現在のセッション'
+                    ? t('history.currentSession')
                     : sessionSwitching
-                      ? '切り替え中…'
+                      ? t('history.switching')
                       : selectedSession.endedAt === null
-                        ? 'このセッションを開く'
-                        : 'この会話の続きから開始'}
+                        ? t('history.openSession')
+                        : t('history.continueSession')}
                 </button>
                 {selectedSession.endedAt !== null && selectedSession.id !== currentSessionId && (
                   <button
@@ -312,33 +326,33 @@ export default function SessionHistoryPanel({
                     disabled={sessionSwitching || deletingSessionId !== null}
                     onClick={() => void deleteSelectedSession()}
                   >
-                    {deletingSessionId === selectedSession.id ? '削除中…' : 'この履歴を削除'}
+                    {deletingSessionId === selectedSession.id ? t('history.deleting') : t('history.delete')}
                   </button>
                 )}
               </div>
             </header>
             <div className="session-history-messages">
-              {openError && <p className="error-message" role="alert">{openError}</p>}
-              {deleteError && <p className="error-message" role="alert">{deleteError}</p>}
-              {historyLoading && <p className="session-placeholder">会話履歴を読み込み中…</p>}
+              {openError && <p className="error-message" role="alert">{translateMessage(openError)}</p>}
+              {deleteError && <p className="error-message" role="alert">{translateMessage(deleteError)}</p>}
+              {historyLoading && <p className="session-placeholder">{t('history.loadingHistory')}</p>}
               {!historyLoading && !historyError && messages.length === 0 && (
-                <p className="session-placeholder">表示できる会話はありません。</p>
+                <p className="session-placeholder">{t('history.noMessages')}</p>
               )}
               {splitGatewayMessages(messages).map((message) => (
                 <article className={`message ${message.role}`} key={message.key}>
-                  <span>{message.role === 'user' ? 'あなた' : 'Hermes'}</span>
+                  <span>{message.role === 'user' ? t('history.user') : t('app.conversation.assistant')}</span>
                   {message.role === 'assistant' ? (
-                    <MarkdownMessage content={message.content} />
+                    <MarkdownMessage content={messageContent(message)} />
                   ) : (
                     <p>{message.content}</p>
                   )}
                 </article>
               ))}
-              {historyError && <p className="error-message" role="alert">{historyError}</p>}
+              {historyError && <p className="error-message" role="alert">{translateMessage(historyError)}</p>}
             </div>
           </>
         ) : (
-          <p className="session-placeholder session-no-selection">閲覧するセッションを選んでください。</p>
+          <p className="session-placeholder session-no-selection">{t('history.selectSession')}</p>
         )}
       </section>
     </section>

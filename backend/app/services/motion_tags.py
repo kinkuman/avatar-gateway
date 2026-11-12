@@ -1,5 +1,7 @@
 """モーション設定とHermesの構造化アバター制御を、安全な表示命令へ変換します。"""
 
+from .messages import UiMessageError, message_payload, message_ref
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 import json
@@ -9,7 +11,7 @@ from typing import Literal
 from urllib.parse import quote
 
 
-class MotionCatalogError(RuntimeError):
+class MotionCatalogError(UiMessageError):
     """設定不備を会話機能全体の停止ではなく、利用者向け警告へ変換可能にします。"""
 
 
@@ -53,11 +55,12 @@ class MotionCatalog:
     motions: tuple[MotionDefinition, ...]
     generating_motion_name: str | None
     error: str | None = None
+    error_message: dict | None = None
 
     @classmethod
-    def unavailable(cls, error: str) -> "MotionCatalog":
+    def unavailable(cls, error: str | UiMessageError) -> "MotionCatalog":
         """設定に問題があってもテキスト会話を継続できる空カタログを返します。"""
-        return cls(motions=(), generating_motion_name=None, error=error)
+        return cls(motions=(), generating_motion_name=None, error=str(error), error_message=message_payload(error))
 
     @property
     def selectable_motions(self) -> dict[str, MotionDefinition]:
@@ -152,10 +155,12 @@ def _read_required_text(item: dict, key: str, location: str, max_length: int) ->
     """JSONの文字列項目を空文字と過大入力から守り、場所付きのエラーにします。"""
     value = item.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise MotionCatalogError(f"{location}.{key} は空でない文字列にしてください")
+        # 対象値.対象値 は空でない文字列の指定条件を検証します
+        raise MotionCatalogError(message_key='gateway.motionCatalog.nonEmptyStringRequired', message_params={'location': location, 'field': key})
     value = value.strip()
     if len(value) > max_length:
-        raise MotionCatalogError(f"{location}.{key} は{max_length}文字以内にしてください")
+        # 対象値.対象値 は対象値文字以内の指定条件を検証します
+        raise MotionCatalogError(message_key='gateway.motionCatalog.stringTooLong', message_params={'location': location, 'field': key, 'maxLength': max_length})
     return value
 
 
@@ -181,48 +186,59 @@ def load_motion_catalog(
     try:
         raw = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise MotionCatalogError(f"モーション設定を読み込めません: {exc}") from exc
+        # モーション設定の読み込み失敗を通知します
+        raise MotionCatalogError(message_key='gateway.motionCatalog.readFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
 
     if not isinstance(raw, dict):
-        raise MotionCatalogError("モーション設定の最上位はオブジェクトにしてください")
+        # モーション設定の最上位はオブジェクトの指定条件を検証します
+        raise MotionCatalogError(message_key='gateway.motionCatalog.objectRequired')
     if raw.get("schema_version") != 1:
-        raise MotionCatalogError("schema_version は 1 にしてください")
+        # schema_version は 1 の指定条件を検証します
+        raise MotionCatalogError(message_key='gateway.motionCatalog.schemaVersion')
 
     generating_name = raw.get("generating_motion")
     if generating_name is not None and not isinstance(generating_name, str):
-        raise MotionCatalogError("generating_motion はタグ名または null にしてください")
+        # generating_motion はタグ名または null の指定条件を検証します
+        raise MotionCatalogError(message_key='gateway.motionCatalog.generatingMotionType')
     if isinstance(generating_name, str):
         generating_name = generating_name.strip().lower() or None
 
     items = raw.get("motions")
     if not isinstance(items, list):
-        raise MotionCatalogError("motions は配列にしてください")
+        # motions は配列の指定条件を検証します
+        raise MotionCatalogError(message_key='gateway.motionCatalog.motionsArrayRequired')
 
     motions: list[MotionDefinition] = []
     names: set[str] = set()
     for index, item in enumerate(items):
         location = f"motions[{index}]"
         if not isinstance(item, dict):
-            raise MotionCatalogError(f"{location} はオブジェクトにしてください")
+            # 対象値 はオブジェクトの指定条件を検証します
+            raise MotionCatalogError(message_key='gateway.motionCatalog.entryObjectRequired', message_params={'location': location})
 
         name = _read_required_text(item, "name", location, 32).lower()
         if not _VALID_NAME.fullmatch(name) or name == "none":
-            raise MotionCatalogError(f"{location}.name は英小文字で始まるタグ名にしてください（noneは予約済み）")
+            # 対象値.name は英小文字で始まるタグ名の指定条件を検証します（noneは予約済み）
+            raise MotionCatalogError(message_key='gateway.motionCatalog.invalidName', message_params={'location': location})
         if name in names:
-            raise MotionCatalogError(f"モーション名 {name} が重複しています")
+            # 利用者へ通知する条件: モーション名 対象値 が重複しています
+            raise MotionCatalogError(message_key='gateway.motionCatalog.duplicateName', message_params={'name': name})
 
         label = _read_required_text(item, "label", location, 50)
         file_name = _read_required_text(item, "file", location, 200)
         if "/" in file_name or "\\" in file_name or Path(file_name).suffix.lower() != ".vrma":
-            raise MotionCatalogError(f"{location}.file はディレクトリを含まない.vrmaファイル名にしてください")
+            # 対象値.file はディレクトリを含まない.vrmaファイル名の指定条件を検証します
+            raise MotionCatalogError(message_key='gateway.motionCatalog.invalidFile', message_params={'location': location})
         prompt = _read_required_text(item, "prompt", location, 200)
         enabled = item.get("enabled", True)
         if not isinstance(enabled, bool):
-            raise MotionCatalogError(f"{location}.enabled は true または false にしてください")
+            # 対象値.enabled は true または false の指定条件を検証します
+            raise MotionCatalogError(message_key='gateway.motionCatalog.enabledBooleanRequired', message_params={'location': location})
         playback = item.get("playback", "auto")
         if not isinstance(playback, str) or playback not in {"auto", "pose", "animation"}:
+            # 対象値.playback は auto、pose、animation のいずれかの指定条件を検証します
             raise MotionCatalogError(
-                f"{location}.playback は auto、pose、animation のいずれかにしてください"
+                message_key='gateway.motionCatalog.invalidPlayback', message_params={'location': location}
             )
         exit_duration_seconds = item.get("exit_duration_seconds", 0.6)
         if (
@@ -230,8 +246,9 @@ def load_motion_catalog(
             or not isinstance(exit_duration_seconds, (int, float))
             or not 0.1 <= exit_duration_seconds <= 5.0
         ):
+            # 対象値.exit_duration_seconds は0.1以上5.0以下の数値の指定条件を検証します
             raise MotionCatalogError(
-                f"{location}.exit_duration_seconds は0.1以上5.0以下の数値にしてください"
+                message_key='gateway.motionCatalog.invalidExitDuration', message_params={'location': location}
             )
 
         available, public_base_url = _resolve_motion_asset(
@@ -253,7 +270,8 @@ def load_motion_catalog(
         ))
 
     if generating_name and generating_name not in names:
-        raise MotionCatalogError(f"generating_motion の {generating_name} は motions に登録されていません")
+        # 利用者へ通知する条件: generating_motion の 対象値 は motions に登録されていません
+        raise MotionCatalogError(message_key='gateway.motionCatalog.generatingMotionMissing', message_params={'name': generating_name})
     return MotionCatalog(tuple(motions), generating_name)
 
 
@@ -266,7 +284,7 @@ def load_motion_catalog_safely(
     try:
         return load_motion_catalog(config_path, local_assets_dir, bundled_assets_dir)
     except MotionCatalogError as exc:
-        return MotionCatalog.unavailable(str(exc))
+        return MotionCatalog.unavailable(exc)
 
 
 class AvatarDirectiveParser:

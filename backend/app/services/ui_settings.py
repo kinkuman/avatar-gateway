@@ -1,5 +1,7 @@
 """ブラウザ表示設定を検証し、共有既定値JSONとして安全に読み書きします。"""
 
+from .messages import UiMessageError, message_ref
+
 import json
 from pathlib import Path
 from typing import Literal
@@ -9,10 +11,13 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 
+from .locales import LANGUAGE_PATTERN
+
+
 BACKGROUND_FILE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 
 
-class UiSettingsError(RuntimeError):
+class UiSettingsError(UiMessageError):
     """設定ファイルの破損や保存失敗を、APIで扱える一つの例外へまとめます。"""
 
 
@@ -172,6 +177,8 @@ class UiSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     schema_version: Literal[1] = 1
+    # 旧い設定ファイルにも、追加言語にも同じ保存経路を使います。
+    language: str = Field(default="ja", pattern=LANGUAGE_PATTERN, max_length=64)
     cast_off_enabled: bool = False
     show_motion_controls: bool = False
     show_camera_help: bool = True
@@ -203,7 +210,8 @@ def _background_files(directory: Path, url_prefix: str) -> dict[str, dict[str, s
             and path.suffix.lower() in BACKGROUND_FILE_SUFFIXES
         )
     except OSError as exc:
-        raise UiSettingsError(f"壁紙一覧を読み込めません: {exc}") from exc
+        # 壁紙一覧の読み込み失敗を通知します
+        raise UiSettingsError(message_key='gateway.settings.backgroundsReadFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
     return {
         path.name: {"file": path.name, "url": f"{url_prefix}/{quote(path.name, safe='')}"}
         for path in files
@@ -229,7 +237,8 @@ class UiSettingsStore:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             return UiSettings.model_validate(raw)
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            raise UiSettingsError(f"UI設定を読み込めません: {exc}") from exc
+            # UI設定の読み込み失敗を通知します
+            raise UiSettingsError(message_key='gateway.settings.readFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
 
     def save(self, value: UiSettings) -> UiSettings:
         """検証済み設定を一時ファイルへ完成させてから置換し、途中書き込みを残しません。"""
@@ -246,5 +255,6 @@ class UiSettingsStore:
                 temporary_path.unlink(missing_ok=True)
             except OSError:
                 pass
-            raise UiSettingsError(f"UI設定を保存できません: {exc}") from exc
+            # UI設定の保存失敗を通知します
+            raise UiSettingsError(message_key='gateway.settings.saveFailed', message_params={'detail': message_ref(exc.message_key, exc.message_params) if isinstance(exc, UiMessageError) and exc.message_key else str(exc)}) from exc
         return value

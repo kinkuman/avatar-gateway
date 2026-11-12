@@ -1,4 +1,5 @@
 // fetchで受け取るSSEをイベント単位に分解し、Firefoxでも安定して逐次表示します。
+import { readResponseMessage, t } from '../i18n'
 export interface SseEvent {
   event: string
   data: Record<string, unknown>
@@ -10,7 +11,7 @@ export async function consumeSse(
   onEvent: (event: SseEvent) => Promise<void> | void,
 ): Promise<void> {
   if (!response.ok || !response.body) {
-    throw new Error(`会話APIエラー: ${response.status}`)
+    throw new Error(await readResponseMessage(response, t('api.conversationStatus', { status: response.status })))
   }
 
   const reader = response.body.getReader()

@@ -1,4 +1,5 @@
 // 会話モードで、全履歴の代わりに最新の質問と応答だけをアバター上へ表示します。
+import { messageContent, t, useTranslation } from '../i18n'
 
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
@@ -36,7 +37,7 @@ function presentConversationAnswer(answer: string): PresentedAnswer {
   const text = answer.replace(GENERATED_IMAGE_PATTERN, (_match, rawAlt: string, url: string) => {
     if (!seenUrls.has(url)) {
       seenUrls.add(url)
-      images.push({ alt: rawAlt.trim() || '生成画像', url })
+      images.push({ alt: rawAlt.trim(), url })
     }
     return ''
   }).replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n').trim()
@@ -59,14 +60,15 @@ function findLatestTurn(messages: Message[]): LatestTurn | null {
     answer: displayed
       .slice(questionIndex + 1)
       .filter((message) => message.role === 'assistant' && message.content.trim())
-      .map((message) => message.content)
+      .map((message) => messageContent(message))
       .join('\n\n'),
   }
 }
 
 /** 最新ターンを読みやすい半透明カードで表示し、視線発話も同じ応答として追加します。 */
 export default function ConversationModeOverlay({ messages, avatarState, gazeText = '' }: Props) {
-  const latestTurn = useMemo(() => findLatestTurn(messages), [messages])
+  const { i18n } = useTranslation()
+  const latestTurn = useMemo(() => findLatestTurn(messages), [messages, i18n.language])
   const presentedAnswer = useMemo(
     () => presentConversationAnswer(latestTurn?.answer ?? ''),
     [latestTurn?.answer],
@@ -90,8 +92,7 @@ export default function ConversationModeOverlay({ messages, avatarState, gazeTex
     return (
       <section className="conversation-mode-overlay" aria-live="polite">
         <div className="conversation-latest-turn conversation-latest-empty">
-          マイクをONにして話しかけてください。
-        </div>
+          {t('conversation.empty')}</div>
       </section>
     )
   }
@@ -99,11 +100,11 @@ export default function ConversationModeOverlay({ messages, avatarState, gazeTex
   return (
     <section className="conversation-mode-overlay" aria-live="polite">
       {imagesVisible && (
-        <aside className="conversation-generated-images" aria-label="生成画像">
+        <aside className="conversation-generated-images" aria-label={t('conversation.generatedImage')}>
           <button
             className="conversation-generated-images-close"
             type="button"
-            aria-label="生成画像を閉じる"
+            aria-label={t('conversation.closeImages')}
             onClick={() => setDismissedImageKey(imageKey)}
           >
             ×
@@ -115,10 +116,10 @@ export default function ConversationModeOverlay({ messages, avatarState, gazeTex
                 href={image.url}
                 target="_blank"
                 rel="noreferrer noopener"
-                title="原寸画像を開く"
+                title={t('conversation.openOriginalImage')}
                 key={image.url}
               >
-                <img src={image.url} alt={image.alt} />
+                <img src={image.url} alt={image.alt || t('conversation.generatedImage')} />
               </a>
             ))}
           </div>
@@ -127,23 +128,23 @@ export default function ConversationModeOverlay({ messages, avatarState, gazeTex
       <div className="conversation-latest-turn" ref={latestTurnRef}>
         {latestTurn && (
           <article className="conversation-latest-question">
-            <span>あなた</span>
+            <span>{t('conversation.user')}</span>
             <p>{latestTurn.question}</p>
           </article>
         )}
         {latestTurn && (presentedAnswer.text || presentedAnswer.images.length === 0) && (
           <article className="conversation-latest-answer">
-            <span>Avatar</span>
+            <span>{t('conversation.assistant')}</span>
             {presentedAnswer.text ? (
               <MarkdownMessage content={presentedAnswer.text} />
             ) : (
-              <p className="conversation-answer-pending">{waiting ? '応答を準備しています…' : '…'}</p>
+              <p className="conversation-answer-pending">{waiting ? t('conversation.preparing') : '…'}</p>
             )}
           </article>
         )}
         {spokenGaze && (
           <article className="conversation-latest-answer">
-            <span>Avatar</span>
+            <span>{t('conversation.assistant')}</span>
             <MarkdownMessage content={spokenGaze} />
           </article>
         )}

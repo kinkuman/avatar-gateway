@@ -1,24 +1,27 @@
 // Hermes Runの状態と安全化済みツールイベントを、会話本文とは分けて表示するパネルです。
+import { t, useTranslation } from '../i18n'
 import { useEffect, useState } from 'react'
 
 import type { AgentRunState, ToolTimelineItem } from '../types'
 
+// 作業の実行状態を翻訳キーへ対応付けます。
 const runStateLabels: Record<AgentRunState, string> = {
-  idle: '待機中',
-  starting: '開始中',
-  running: '作業中',
-  using_tool: 'ツール実行中',
-  waiting_for_approval: '承認待ち',
-  stopping: '停止処理中',
-  completed: '完了',
-  failed: '失敗',
-  stopped: '停止済み',
+  idle: 'timeline.run.idle', // 実行待ち
+  starting: 'timeline.run.starting', // 実行を開始
+  running: 'timeline.run.running', // 作業を実行
+  using_tool: 'timeline.run.usingTool', // ツールを実行
+  waiting_for_approval: 'timeline.run.waitingForApproval', // 許可を待機
+  stopping: 'timeline.run.stopping', // 停止を処理
+  completed: 'timeline.run.completed', // 作業の完了
+  failed: 'timeline.run.failed', // 作業の失敗
+  stopped: 'timeline.run.stopped', // 停止の完了
 }
 
+// ツールの実行結果を翻訳キーへ対応付けます。
 const toolStateLabels: Record<ToolTimelineItem['status'], string> = {
-  running: '実行中',
-  succeeded: '成功',
-  failed: '失敗',
+  running: 'timeline.tool.running', // ツールを実行中
+  succeeded: 'timeline.tool.succeeded', // ツールの正常終了
+  failed: 'timeline.run.failed', // 作業の失敗
 }
 
 interface ToolTimelineProps {
@@ -28,7 +31,7 @@ interface ToolTimelineProps {
 
 /** HermesのUNIX秒を、利用者のローカル時刻へ短く整形します。 */
 function formatStartedAt(timestamp: number | null): string {
-  if (timestamp === null) return '開始時刻不明'
+  if (timestamp === null) return t('timeline.unknownStartTime')
   return new Date(timestamp * 1000).toLocaleTimeString('ja-JP', {
     hour: '2-digit',
     minute: '2-digit',
@@ -39,12 +42,13 @@ function formatStartedAt(timestamp: number | null): string {
 /** Hermesが提供した所要時間だけを表示し、不明な時間を画面側で推測しません。 */
 function formatDuration(durationSeconds: number | null): string | null {
   if (durationSeconds === null) return null
-  if (durationSeconds < 1) return `${Math.round(durationSeconds * 1000)}ms`
-  return `${durationSeconds.toFixed(1)}秒`
+  if (durationSeconds < 1) return t('timeline.durationMilliseconds', { duration: Math.round(durationSeconds * 1000) })
+  return t('timeline.duration', { duration: durationSeconds.toFixed(1) })
 }
 
 /** 一つのRunに属するツールを実行順に表示します。 */
 export default function ToolTimeline({ runState, items }: ToolTimelineProps) {
+  useTranslation()
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
@@ -55,27 +59,27 @@ export default function ToolTimeline({ runState, items }: ToolTimelineProps) {
   if (runState === 'idle') return null
 
   return (
-    <section className="work-panel" aria-label="Hermes作業状況" aria-live="polite">
+    <section className="work-panel" aria-label={t('timeline.panelLabel')} aria-live="polite">
       <header className="work-panel-header">
         <div>
-          <span className="work-panel-eyebrow">AGENT RUN</span>
-          <h2>作業状況</h2>
+          <span className="work-panel-eyebrow">{t('timeline.eyebrow')}</span>
+          <h2>{t('timeline.title')}</h2>
         </div>
         <div className="work-panel-actions">
-          <span className={`run-state run-state-${runState}`}>{runStateLabels[runState]}</span>
+          <span className={`run-state run-state-${runState}`}>{t(runStateLabels[runState])}</span>
           <button
             type="button"
             className="work-panel-toggle"
             aria-expanded={!collapsed}
             onClick={() => setCollapsed((current) => !current)}
           >
-            {collapsed ? '展開' : '折りたたむ'}
+            {collapsed ? t('timeline.expand') : t('timeline.collapse')}
           </button>
         </div>
       </header>
-      {!collapsed && <ol className="tool-timeline" aria-label="ツール実行タイムライン">
+      {!collapsed && <ol className="tool-timeline" aria-label={t('timeline.listLabel')}>
         {items.length === 0 ? (
-          <li className="tool-timeline-empty">このRunではツールをまだ使用していません。</li>
+          <li className="tool-timeline-empty">{t('timeline.empty')}</li>
         ) : items.map((item) => {
           const duration = formatDuration(item.durationSeconds)
           return (
@@ -84,11 +88,11 @@ export default function ToolTimeline({ runState, items }: ToolTimelineProps) {
               <div className="tool-entry-body">
                 <div className="tool-entry-title">
                   <strong>{item.tool}</strong>
-                  <span>{toolStateLabels[item.status]}</span>
+                  <span>{t(toolStateLabels[item.status])}</span>
                 </div>
                 <div className="tool-entry-meta">
                   <time>{formatStartedAt(item.startedAt)}</time>
-                  {duration && <span>所要時間 {duration}</span>}
+                  {duration && <span>{t('timeline.elapsed', { duration })}</span>}
                 </div>
               </div>
             </li>

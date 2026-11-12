@@ -1,4 +1,5 @@
 // 画面右上から、Hermesが提供するモデルへ切り替えます。
+import { readResponseMessage, readMessage, t, useTranslation, translateMessage } from '../i18n'
 
 import { useEffect, useId, useRef, useState } from 'react'
 
@@ -61,6 +62,7 @@ function readCatalog(payload: unknown): ModelCatalog | null {
 
 /** 機能一覧の右に置き、開いたときだけHermesのモデル一覧を取得します。 */
 export default function ModelSelectMenu({ sessionId, disabled }: Props) {
+  useTranslation()
   const [open, setOpen] = useState(false)
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null)
   const [loading, setLoading] = useState(false)
@@ -94,13 +96,16 @@ export default function ModelSelectMenu({ sessionId, disabled }: Props) {
       setError('')
       try {
         const response = await fetch('/api/hermes/models', { signal: controller.signal })
-        if (!response.ok) throw new Error(`モデル一覧を取得できませんでした (${response.status})`)
+        // ここで中断する条件: モデル一覧を取得できませんでした (対象値)。
+        if (!response.ok) throw new Error(await readResponseMessage(response, t('models.errors.listStatus', { status: response.status })))
         const next = readCatalog(await response.json())
-        if (!next) throw new Error('モデル一覧の形式が正しくありません。')
+        // ここで中断する条件: モデル一覧の形式が正しくありません。
+        if (!next) throw new Error(t('models.errors.listFormat'))
         setCatalog(next)
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === 'AbortError') return
-        setError(cause instanceof Error ? cause.message : 'モデル一覧を取得できませんでした。')
+        // モデル一覧の取得失敗を利用者へ知らせます。
+        setError(cause instanceof Error ? cause.message : t('models.errors.list'))
       } finally {
         if (!controller.signal.aborted) setLoading(false)
       }
@@ -136,7 +141,8 @@ export default function ModelSelectMenu({ sessionId, disabled }: Props) {
       })
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { detail?: unknown } | null
-        const detail = typeof payload?.detail === 'string' ? payload.detail : `モデルを切り替えられませんでした (${response.status})`
+        // モデル変更APIの失敗理由を、状態コードとともに表示します。
+        const detail = readMessage(payload, t('models.errors.switchStatus', { status: response.status }))
         throw new Error(detail)
       }
       const payload = await response.json() as { selected?: { model?: string, provider?: string } | null }
@@ -148,7 +154,8 @@ export default function ModelSelectMenu({ sessionId, disabled }: Props) {
       }))
       setOpen(false)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'モデルを切り替えられませんでした。')
+      // モデル切り替えに失敗したことを利用者へ知らせます。
+      setError(cause instanceof Error ? cause.message : t('models.errors.switch'))
     } finally {
       setBusyModel('')
     }
@@ -163,22 +170,22 @@ export default function ModelSelectMenu({ sessionId, disabled }: Props) {
         disabled={disabled}
         aria-expanded={open}
         aria-controls={listId}
-        aria-label={activeLabel ? `モデルを切り替える（現在: ${activeLabel}）` : 'モデルを切り替える'}
-        title={activeLabel ? `モデルを切り替える（現在: ${activeLabel}）` : 'モデルを切り替える'}
+        aria-label={activeLabel ? t('models.switchCurrent', { model: activeLabel }) : t('models.switch')}
+        title={activeLabel ? t('models.switchCurrent', { model: activeLabel }) : t('models.switch')}
       >
         <SessionActionIcon name="model" />
       </button>
       {open && (
-        <div className="model-select-menu" id={listId} role="dialog" aria-label="モデル選択">
+        <div className="model-select-menu" id={listId} role="dialog" aria-label={t('models.panelLabel')}>
           <input
             className="model-select-search"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="モデルを絞り込む"
-            aria-label="モデルを絞り込む"
+            placeholder={t('models.filter')}
+            aria-label={t('models.filter')}
           />
-          {loading && <p className="model-select-status">読み込み中です</p>}
-          {error && <p className="model-select-error">{error}</p>}
+          {loading && <p className="model-select-status">{t('models.loading')}</p>}
+          {error && <p className="model-select-error">{translateMessage(error)}</p>}
           {catalog && (
             <div className="model-select-list">
               <button
@@ -187,7 +194,7 @@ export default function ModelSelectMenu({ sessionId, disabled }: Props) {
                 disabled={busyModel !== ''}
                 onClick={() => void selectModel(null, null)}
               >
-                既定のモデル（{catalog.defaultModel}）
+                {t('models.defaultModel', { model: catalog.defaultModel })}
               </button>
               {visibleProviders.map((provider) => (
                 <section key={provider.slug}>
@@ -206,10 +213,10 @@ export default function ModelSelectMenu({ sessionId, disabled }: Props) {
                       </button>
                     )
                   })}
-                  {provider.truncated && <p className="model-select-status">一部のみ表示しています</p>}
+                  {provider.truncated && <p className="model-select-status">{t('models.partialList')}</p>}
                 </section>
               ))}
-              {!loading && visibleProviders.length === 0 && <p className="model-select-status">一致するモデルがありません</p>}
+              {!loading && visibleProviders.length === 0 && <p className="model-select-status">{t('models.noMatches')}</p>}
             </div>
           )}
         </div>

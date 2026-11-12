@@ -1,5 +1,7 @@
 """Hermes固有APIへの認証、機能確認、会話ストリームを一か所に集約します。"""
 
+from .messages import UiMessageError, message_ref
+
 import json
 import re
 from collections.abc import AsyncIterator, Mapping
@@ -32,7 +34,7 @@ _HERMES_RUN_ID_PATTERN = re.compile(r"^run_[0-9a-f]{32}$")
 _SESSION_LIST_SCAN_LIMIT = 5_000
 
 
-class HermesError(RuntimeError):
+class HermesError(UiMessageError):
     """Hermesへの接続・応答異常を、秘密情報を含まない利用者向けエラーへ統一します。"""
 
 
@@ -54,10 +56,12 @@ class HermesSession:
     def from_response(cls, payload: Any) -> "HermesSession":
         """Hermesの可変JSONを検証し、system prompt等を含まない表現へ変換します。"""
         if not isinstance(payload, dict):
-            raise HermesError("Hermes Sessionの応答形式が正しくありません")
+            # Hermes Sessionの応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.sessionFormat')
         session_id = payload.get("id")
         if not isinstance(session_id, str) or not session_id:
-            raise HermesError("Hermes SessionにIDがありません")
+            # Hermes SessionのID欠落を通知します
+            raise HermesError(message_key='gateway.hermesClient.sessionIdMissing')
 
         safe_keys = (
             "id",
@@ -105,13 +109,15 @@ class HermesSessionMessage:
     def from_response(cls, payload: Any) -> "HermesSessionMessage | None":
         """内部管理メッセージを除外し、安全な会話履歴だけへ変換します。"""
         if not isinstance(payload, dict):
-            raise HermesError("Hermes Sessionメッセージの応答形式が正しくありません")
+            # Hermes Sessionメッセージの応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.messagesFormat')
         role = payload.get("role")
         # 新旧Hermesの履歴を扱い、管理情報を会話表示や次のRunへ混ぜません。
         if role in {"system", "session_meta"}:
             return None
         if role not in {"user", "assistant", "tool"}:
-            raise HermesError("Hermes Sessionメッセージのroleが正しくありません")
+            # Hermes Sessionメッセージのroleの不正を通知します
+            raise HermesError(message_key='gateway.hermesClient.messageRoleInvalid')
 
         safe_keys = (
             "id",
@@ -166,16 +172,20 @@ class HermesSkill:
     def from_response(cls, payload: Any) -> "HermesSkill":
         """任意のSkill応答から、画面表示に必要な文字列だけを検証します。"""
         if not isinstance(payload, dict):
-            raise HermesError("Hermes Skill一覧の応答形式が正しくありません")
+            # Hermes Skill一覧の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.skillsFormat')
         name = payload.get("name")
         if not isinstance(name, str) or not name.strip():
-            raise HermesError("Hermes Skillに名前がありません")
+            # Hermes Skillに名前の欠落を通知します
+            raise HermesError(message_key='gateway.hermesClient.skillNameMissing')
         description = payload.get("description")
         category = payload.get("category")
         if description is not None and not isinstance(description, str):
-            raise HermesError("Hermes Skillの説明が正しくありません")
+            # Hermes Skillの説明の不正を通知します
+            raise HermesError(message_key='gateway.hermesClient.skillDescriptionInvalid')
         if category is not None and not isinstance(category, str):
-            raise HermesError("Hermes Skillの分類が正しくありません")
+            # Hermes Skillの分類の不正を通知します
+            raise HermesError(message_key='gateway.hermesClient.skillCategoryInvalid')
         return cls(
             name=name.strip(),
             description=(description or "").strip(),
@@ -206,21 +216,26 @@ class HermesToolset:
     def from_response(cls, payload: Any) -> "HermesToolset":
         """Toolset応答を検証し、秘密値を含まない参照用データへ変換します。"""
         if not isinstance(payload, dict):
-            raise HermesError("Hermes Toolset一覧の応答形式が正しくありません")
+            # Hermes Toolset一覧の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.toolsetsFormat')
         name = payload.get("name")
         label = payload.get("label")
         description = payload.get("description")
         raw_tools = payload.get("tools")
         if not isinstance(name, str) or not name.strip() or not isinstance(raw_tools, list):
-            raise HermesError("Hermes Toolset一覧の応答形式が正しくありません")
+            # Hermes Toolset一覧の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.toolsetsFormat')
         if label is not None and not isinstance(label, str):
-            raise HermesError("Hermes Toolsetの表示名が正しくありません")
+            # Hermes Toolsetの表示名の不正を通知します
+            raise HermesError(message_key='gateway.hermesClient.toolsetLabelInvalid')
         if description is not None and not isinstance(description, str):
-            raise HermesError("Hermes Toolsetの説明が正しくありません")
+            # Hermes Toolsetの説明の不正を通知します
+            raise HermesError(message_key='gateway.hermesClient.toolsetDescriptionInvalid')
         tools: list[str] = []
         for tool in raw_tools:
             if not isinstance(tool, str) or not tool.strip():
-                raise HermesError("Hermes Toolsetのツール名が正しくありません")
+                # Hermes Toolsetのツール名の不正を通知します
+                raise HermesError(message_key='gateway.hermesClient.toolNameInvalid')
             tools.append(tool.strip())
         return cls(
             name=name.strip(),
@@ -256,11 +271,13 @@ class HermesCapabilities:
     def from_response(cls, payload: Any) -> "HermesCapabilities":
         """外部APIの任意JSONから、安全に参照できるCapabilitiesを組み立てます。"""
         if not isinstance(payload, dict):
-            raise HermesError("Hermes Capabilitiesの応答形式が正しくありません")
+            # Hermes Capabilitiesの応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.capabilitiesFormat')
 
         raw_features = payload.get("features")
         if not isinstance(raw_features, dict):
-            raise HermesError("Hermes Capabilitiesにfeaturesがありません")
+            # Hermes Capabilitiesにfeaturesの欠落を通知します
+            raise HermesError(message_key='gateway.hermesClient.featuresMissing')
 
         raw_auth = payload.get("auth")
         auth_required = bool(raw_auth.get("required")) if isinstance(raw_auth, dict) else False
@@ -313,33 +330,41 @@ class HermesClient:
     def _headers(self) -> dict[str, str]:
         """秘密情報をペイロードやURLへ混ぜず、Bearerヘッダーだけに限定します。"""
         if not self._config.hermes_api_key:
-            raise HermesError("HERMES_API_KEYが設定されていません")
+            # 接続に必要な認証情報がなければ、APIを呼び出す前に知らせます。
+            raise HermesError(message_key='gateway.hermesClient.apiKeyMissing')
         return {"Authorization": f"Bearer {self._config.hermes_api_key}"}
 
     @staticmethod
     def _require_owned_session_id(session_id: str) -> None:
         """他経路のHermesセッションをAvatar Gateway経由で参照させないよう境界を固定します。"""
         if not _AVATAR_SESSION_ID_PATTERN.fullmatch(session_id):
-            raise HermesSessionNotFoundError("Avatar Gatewayのセッションが見つかりません")
+            # Avatar Gatewayのセッションが見つからない状態を通知します
+            raise HermesSessionNotFoundError(message_key='gateway.hermesClient.sessionNotFound')
 
     @staticmethod
     def _require_run_id(run_id: str) -> None:
         """上流URLへ埋め込むRun IDをHermesの生成形式だけに制限します。"""
         if not _HERMES_RUN_ID_PATTERN.fullmatch(run_id):
-            raise HermesSessionNotFoundError("Avatar GatewayのRunが見つかりません")
+            # Avatar GatewayのRunが見つからない状態を通知します
+            raise HermesSessionNotFoundError(message_key='gateway.hermesClient.runNotFound')
 
     @staticmethod
     def _api_error(status_code: int, operation: str) -> HermesError:
         """Hermesの応答本文を外部へ転送せず、状態コードを安全な説明へ変換します。"""
         if status_code in {401, 403}:
-            return HermesError("Hermes APIの認証に失敗しました")
+            # Hermes APIの認証の失敗を通知します
+            return HermesError(message_key='gateway.hermesClient.authFailed')
         if status_code == 404:
-            return HermesError(f"Hermesが{operation}に対応していません")
+            # 接続先が対象APIに未対応なら、更新が必要な機能を知らせます。
+            return HermesError(message_key='gateway.hermesClient.unsupportedOperation', message_params={'operation': message_ref(operation) if operation.startswith('gateway.operations.') else operation})
         if status_code == 429:
-            return HermesError("Hermes APIが混雑しています。少し待ってから再試行してください")
+            # 混雑時は、時間を置いて再試行できることを案内します。
+            return HermesError(message_key='gateway.hermesClient.busy')
         if status_code >= 500:
-            return HermesError("Hermes APIで内部エラーが発生しました")
-        return HermesError(f"Hermes APIリクエストに失敗しました ({status_code})")
+            # 上流サーバー内部の失敗を、応答本文を漏らさず通知します。
+            return HermesError(message_key='gateway.hermesClient.internalError')
+        # Hermes APIリクエストの失敗を通知します (対象値)
+        return HermesError(message_key='gateway.hermesClient.requestFailed', message_params={'status': status_code})
 
     async def _request_json(
         self,
@@ -349,8 +374,8 @@ class HermesClient:
         operation: str,
         params: Mapping[str, Any] | None = None,
         body: Mapping[str, Any] | None = None,
-        not_found_message: str | None = None,
-        conflict_message: str | None = None,
+        not_found_message: str | UiMessageError | None = None,
+        conflict_message: str | UiMessageError | None = None,
         timeout: float | None = None,
     ) -> dict[str, Any]:
         """HermesのJSON APIに共通する認証、短いタイムアウト、応答検証を適用します。"""
@@ -368,7 +393,8 @@ class HermesClient:
                     json=body,
                 )
         except httpx.HTTPError as exc:
-            raise HermesError("Hermesへ接続できません") from exc
+            # Hermesへの接続失敗を通知します
+            raise HermesError(message_key='gateway.hermesClient.connectionFailed') from exc
 
         if response.status_code == 404 and not_found_message:
             raise HermesSessionNotFoundError(not_found_message)
@@ -379,9 +405,11 @@ class HermesClient:
         try:
             payload = response.json()
         except json.JSONDecodeError as exc:
-            raise HermesError(f"Hermes {operation}の応答形式が正しくありません") from exc
+            # Hermes 対象値の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.operationResponseFormat', message_params={'operation': message_ref(operation) if operation.startswith('gateway.operations.') else operation}) from exc
         if not isinstance(payload, dict):
-            raise HermesError(f"Hermes {operation}の応答形式が正しくありません")
+            # Hermes 対象値の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.operationResponseFormat', message_params={'operation': message_ref(operation) if operation.startswith('gateway.operations.') else operation})
         return payload
 
     async def get_capabilities(self) -> HermesCapabilities:
@@ -405,7 +433,7 @@ class HermesClient:
             payload = await self._request_json(
                 "GET",
                 "/api/sessions",
-                operation="Session一覧API",
+                operation='gateway.operations.sessions',
                 params={
                     "source": "api_server",
                     "include_children": "true",
@@ -415,7 +443,8 @@ class HermesClient:
             )
             raw_sessions = payload.get("data")
             if not isinstance(raw_sessions, list):
-                raise HermesError("Hermes Session一覧の応答形式が正しくありません")
+                # Hermes Session一覧の応答形式の異常を通知します
+                raise HermesError(message_key='gateway.hermesClient.sessionListFormat')
 
             for raw_session in raw_sessions:
                 session = HermesSession.from_response(raw_session)
@@ -445,12 +474,13 @@ class HermesClient:
         payload = await self._request_json(
             "POST",
             "/api/sessions",
-            operation="Session作成API",
+            operation='gateway.operations.sessionCreate',
             body=body,
         )
         session = HermesSession.from_response(payload.get("session"))
         if session.id != session_id:
-            raise HermesError("Hermes Session作成のIDが一致しません")
+            # Hermes Session作成のIDの不一致を通知します
+            raise HermesError(message_key='gateway.hermesClient.createdSessionIdMismatch')
         return session
 
     async def get_session(self, session_id: str) -> HermesSession:
@@ -459,12 +489,13 @@ class HermesClient:
         payload = await self._request_json(
             "GET",
             f"/api/sessions/{session_id}",
-            operation="Session取得API",
-            not_found_message="Avatar Gatewayのセッションが見つかりません",
+            operation='gateway.operations.sessionGet',
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.sessionNotFound'),
         )
         session = HermesSession.from_response(payload.get("session"))
         if session.id != session_id:
-            raise HermesError("Hermes Session取得のIDが一致しません")
+            # Hermes Session取得のIDの不一致を通知します
+            raise HermesError(message_key='gateway.hermesClient.fetchedSessionIdMismatch')
         return session
 
     async def end_session(self, session_id: str) -> HermesSession:
@@ -473,15 +504,17 @@ class HermesClient:
         payload = await self._request_json(
             "PATCH",
             f"/api/sessions/{session_id}",
-            operation="Session終了API",
+            operation='gateway.operations.sessionEnd',
             body={"end_reason": "user_reset"},
-            not_found_message="Avatar Gatewayのセッションが見つかりません",
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.sessionNotFound'),
         )
         session = HermesSession.from_response(payload.get("session"))
         if session.id != session_id:
-            raise HermesError("Hermes Session終了のIDが一致しません")
+            # Hermes Session終了のIDの不一致を通知します
+            raise HermesError(message_key='gateway.hermesClient.endedSessionIdMismatch')
         if session.data.get("ended_at") is None:
-            raise HermesError("Hermes Sessionが終了状態になっていません")
+            # 終了処理が反映されていない状態を成功として扱いません。
+            raise HermesError(message_key='gateway.hermesClient.sessionNotEnded')
         return session
 
     async def fork_ended_session(self, source_session_id: str) -> HermesSession:
@@ -489,24 +522,28 @@ class HermesClient:
         self._require_owned_session_id(source_session_id)
         source = await self.get_session(source_session_id)
         if source.data.get("ended_at") is None:
-            raise HermesConflictError("継続中のセッションは分岐せず、そのまま再開してください")
+            # 継続可能なセッションを不要に分岐させないため、直接の再開を案内します。
+            raise HermesConflictError(message_key='gateway.hermesClient.activeSessionForkDenied')
 
         fork_id = f"{AVATAR_SESSION_ID_PREFIX}{uuid4().hex}"
         payload = await self._request_json(
             "POST",
             f"/api/sessions/{source_session_id}/fork",
-            operation="Session分岐API",
+            operation='gateway.operations.sessionFork',
             body={"id": fork_id},
-            not_found_message="Avatar Gatewayのセッションが見つかりません",
-            conflict_message="セッションを分岐できませんでした。履歴を更新して再試行してください",
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.sessionNotFound'),
+            conflict_message=UiMessageError(message_key='gateway.hermesClient.forkConflict'),
         )
         fork = HermesSession.from_response(payload.get("session"))
         if fork.id != fork_id:
-            raise HermesError("Hermes Session分岐のIDが一致しません")
+            # Hermes Session分岐のIDの不一致を通知します
+            raise HermesError(message_key='gateway.hermesClient.forkIdMismatch')
         if fork.data.get("parent_session_id") != source_session_id:
-            raise HermesError("Hermes Session分岐の親IDが一致しません")
+            # Hermes Session分岐の親IDの不一致を通知します
+            raise HermesError(message_key='gateway.hermesClient.forkParentMismatch')
         if "ended_at" not in fork.data or fork.data.get("ended_at") is not None:
-            raise HermesError("Hermes Session分岐が継続可能な状態ではありません")
+            # 作成した分岐が利用可能な状態かを確認します。
+            raise HermesError(message_key='gateway.hermesClient.forkNotActive')
         return fork
 
     async def get_session_messages(self, session_id: str) -> tuple[HermesSessionMessage, ...]:
@@ -515,12 +552,13 @@ class HermesClient:
         payload = await self._request_json(
             "GET",
             f"/api/sessions/{session_id}/messages",
-            operation="SessionメッセージAPI",
-            not_found_message="Avatar Gatewayのセッションが見つかりません",
+            operation='gateway.operations.sessionMessages',
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.sessionNotFound'),
         )
         raw_messages = payload.get("data")
         if not isinstance(raw_messages, list):
-            raise HermesError("Hermes Sessionメッセージの応答形式が正しくありません")
+            # Hermes Sessionメッセージの応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.messagesFormat')
 
         messages: list[HermesSessionMessage] = []
         for raw_message in raw_messages:
@@ -534,27 +572,30 @@ class HermesClient:
         self._require_owned_session_id(session_id)
         session = await self.get_session(session_id)
         if session.data.get("ended_at") is None:
-            raise HermesConflictError("継続中のセッションは削除できません。先に終了してください")
+            # 実行中の会話を失わないよう、削除前に終了を求めます。
+            raise HermesConflictError(message_key='gateway.hermesClient.activeSessionDeleteDenied')
         payload = await self._request_json(
             "DELETE",
             f"/api/sessions/{session_id}",
-            operation="Session削除API",
-            not_found_message="Avatar Gatewayのセッションが見つかりません",
-            conflict_message="セッションを削除できませんでした。履歴を更新して再試行してください",
+            operation='gateway.operations.sessionDelete',
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.sessionNotFound'),
+            conflict_message=UiMessageError(message_key='gateway.hermesClient.deleteConflict'),
         )
         if payload.get("id") != session_id or payload.get("deleted") is not True:
-            raise HermesError("Hermes Session削除の応答形式が正しくありません")
+            # Hermes Session削除の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.deleteResponseFormat')
 
     async def list_skills(self) -> tuple[HermesSkill, ...]:
         """Hermes API Serverから利用可能なSkillの公開情報だけを取得します。"""
         payload = await self._request_json(
             "GET",
             "/v1/skills",
-            operation="Skill一覧API",
+            operation='gateway.operations.skills',
         )
         raw_items = payload.get("data")
         if not isinstance(raw_items, list):
-            raise HermesError("Hermes Skill一覧の応答形式が正しくありません")
+            # Hermes Skill一覧の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.skillsFormat')
         return tuple(HermesSkill.from_response(item) for item in raw_items)
 
     async def list_toolsets(self) -> tuple[HermesToolset, ...]:
@@ -562,11 +603,12 @@ class HermesClient:
         payload = await self._request_json(
             "GET",
             "/v1/toolsets",
-            operation="Toolset一覧API",
+            operation='gateway.operations.toolsets',
         )
         raw_items = payload.get("data")
         if not isinstance(raw_items, list):
-            raise HermesError("Hermes Toolset一覧の応答形式が正しくありません")
+            # Hermes Toolset一覧の応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.toolsetsFormat')
         return tuple(HermesToolset.from_response(item) for item in raw_items)
 
     def _saved_model(self) -> SelectedHermesModel | None:
@@ -574,7 +616,7 @@ class HermesClient:
         try:
             return ModelSelectionStore(self._config.hermes_model_file).load()
         except ModelSelectionError as exc:
-            raise HermesError(str(exc)) from exc
+            raise HermesError(exc) from exc
 
     def _run_model(self) -> str:
         """選択がなければ、起動時のHERMES_MODELをそのまま使います。"""
@@ -586,7 +628,7 @@ class HermesClient:
         return await self._request_json(
             "GET",
             "/api/model/options",
-            operation="モデル一覧API",
+            operation='gateway.operations.models',
             params={"include_unconfigured": "false"},
             timeout=25,
         )
@@ -597,10 +639,10 @@ class HermesClient:
         await self._request_json(
             "POST",
             f"/api/sessions/{session_id}/model",
-            operation="モデル固定API",
+            operation='gateway.operations.modelSelect',
             body={"model": model, "provider": provider, "require_model_lock": True},
-            not_found_message="Avatar Gatewayのセッションが見つかりません",
-            conflict_message="このセッションでは指定したモデルを固定できません",
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.sessionNotFound'),
+            conflict_message=UiMessageError(message_key='gateway.hermesClient.modelConflict'),
         )
 
     async def start_run(
@@ -626,12 +668,13 @@ class HermesClient:
         payload = await self._request_json(
             "POST",
             "/v1/runs",
-            operation="Run開始API",
+            operation='gateway.operations.runStart',
             body=body,
         )
         run_id = payload.get("run_id")
         if not isinstance(run_id, str) or not _HERMES_RUN_ID_PATTERN.fullmatch(run_id):
-            raise HermesError("Hermes Run開始の応答に正しいRun IDがありません")
+            # Hermes Run開始の応答に正しいRun IDの欠落を通知します
+            raise HermesError(message_key='gateway.hermesClient.runIdMissing')
         return {"run_id": run_id, "status": str(payload.get("status") or "started")}
 
     async def get_run(self, run_id: str) -> dict[str, Any]:
@@ -640,11 +683,12 @@ class HermesClient:
         payload = await self._request_json(
             "GET",
             f"/v1/runs/{run_id}",
-            operation="Run状態API",
-            not_found_message="Avatar GatewayのRunが見つかりません",
+            operation='gateway.operations.runStatus',
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.runNotFound'),
         )
         if payload.get("run_id") != run_id:
-            raise HermesError("Hermes Run状態APIのRun IDが一致しません")
+            # Hermes Run状態APIのRun IDの不一致を通知します
+            raise HermesError(message_key='gateway.hermesClient.runIdMismatch')
         safe_keys = (
             "object",
             "run_id",
@@ -677,9 +721,10 @@ class HermesClient:
                     headers=self._headers(),
                 ) as response:
                     if response.status_code == 404:
-                        raise HermesSessionNotFoundError("Avatar GatewayのRunが見つかりません")
+                        # Avatar GatewayのRunが見つからない状態を通知します
+                        raise HermesSessionNotFoundError(message_key='gateway.hermesClient.runNotFound')
                     if response.status_code >= 400:
-                        raise self._api_error(response.status_code, "RunイベントAPI")
+                        raise self._api_error(response.status_code, 'gateway.operations.runEvents')
 
                     async for line in response.aiter_lines():
                         if not line.startswith("data:"):
@@ -690,12 +735,15 @@ class HermesClient:
                         try:
                             event = json.loads(data)
                         except json.JSONDecodeError as exc:
-                            raise HermesError("Hermes Runイベントの応答形式が正しくありません") from exc
+                            # Hermes Runイベントの応答形式の異常を通知します
+                            raise HermesError(message_key='gateway.hermesClient.runEventsFormat') from exc
                         if not isinstance(event, dict) or not isinstance(event.get("event"), str):
-                            raise HermesError("Hermes Runイベントの応答形式が正しくありません")
+                            # Hermes Runイベントの応答形式の異常を通知します
+                            raise HermesError(message_key='gateway.hermesClient.runEventsFormat')
                         yield event
         except httpx.HTTPError as exc:
-            raise HermesError("Hermes Runイベントへ接続できません") from exc
+            # Hermes Runイベントへの接続失敗を通知します
+            raise HermesError(message_key='gateway.hermesClient.runEventsConnectionFailed') from exc
 
     async def stop_run(self, run_id: str) -> dict[str, Any]:
         """Hermesエージェント自体へ停止要求を送り、受付状態だけを安全に返します。"""
@@ -703,8 +751,8 @@ class HermesClient:
         payload = await self._request_json(
             "POST",
             f"/v1/runs/{run_id}/stop",
-            operation="Run停止API",
-            not_found_message="Avatar GatewayのRunが見つかりません",
+            operation='gateway.operations.runStop',
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.runNotFound'),
         )
         return {
             "run_id": run_id,
@@ -727,7 +775,8 @@ class HermesClient:
         """
         self._require_run_id(run_id)
         if choice not in {"once", "session", "always", "deny"}:
-            raise HermesError("承認回答が正しくありません")
+            # 承認回答の不正を通知します
+            raise HermesError(message_key='gateway.hermesClient.invalidApprovalChoice')
         body: dict[str, Any] = {"choice": choice}
         if request_id:
             body["request_id"] = request_id
@@ -736,22 +785,24 @@ class HermesClient:
         payload = await self._request_json(
             "POST",
             f"/v1/runs/{run_id}/approval",
-            operation="Run承認API",
+            operation='gateway.operations.runApproval',
             body=body,
-            not_found_message="Avatar GatewayのRunが見つかりません",
-            conflict_message="この承認要求は既に解決済みか、期限切れです",
+            not_found_message=UiMessageError(message_key='gateway.hermesClient.runNotFound'),
+            conflict_message=UiMessageError(message_key='gateway.hermesClient.approvalExpired'),
         )
         status = payload.get("status")
         resolved = payload.get("resolved")
         if isinstance(resolved, int) and not isinstance(resolved, bool):
             # 旧Hermes(非authority): 解決件数 ``resolved`` を返す
             if resolved < 1:
-                raise HermesError("Hermes Run承認APIの応答形式が正しくありません")
+                # Hermes Run承認APIの応答形式の異常を通知します
+                raise HermesError(message_key='gateway.hermesClient.approvalResponseFormat')
         elif status in {"resolved", "already_resolved"}:
             # 新Hermes(session authority): ``{status, prompt_id}`` を返す
             resolved = 1 if status == "resolved" else 0
         else:
-            raise HermesError("Hermes Run承認APIの応答形式が正しくありません")
+            # Hermes Run承認APIの応答形式の異常を通知します
+            raise HermesError(message_key='gateway.hermesClient.approvalResponseFormat')
         return {
             "run_id": run_id,
             "choice": choice,

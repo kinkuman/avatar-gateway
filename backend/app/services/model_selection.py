@@ -1,5 +1,7 @@
 """画面から選んだHermesモデルを、次の会話でも使えるように保存します。"""
 
+from .messages import UiMessageError
+
 import json
 import re
 from pathlib import Path
@@ -14,7 +16,7 @@ _PROVIDER_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
 _MAX_MODELS_PER_PROVIDER = 800
 
 
-class ModelSelectionError(RuntimeError):
+class ModelSelectionError(UiMessageError):
     """モデル選択の読み書き失敗を、秘密情報を含まない説明へ統一します。"""
 
 
@@ -57,7 +59,8 @@ class ModelSelectionStore:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             return SelectedHermesModel.model_validate(raw)
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            raise ModelSelectionError("保存済みのモデル選択を読み込めません") from exc
+            # 保存済みのモデル選択の読み込み失敗を通知します
+            raise ModelSelectionError(message_key='gateway.models.readFailed') from exc
 
     def save(self, value: SelectedHermesModel) -> SelectedHermesModel:
         """完成したJSONを置換し、途中までの書き込みを正本に残しません。"""
@@ -74,7 +77,8 @@ class ModelSelectionStore:
                 temporary.unlink(missing_ok=True)
             except OSError:
                 pass
-            raise ModelSelectionError("モデル選択を保存できません") from exc
+            # モデル選択の保存失敗を通知します
+            raise ModelSelectionError(message_key='gateway.models.saveFailed') from exc
         return value
 
     def clear(self) -> None:
@@ -82,16 +86,19 @@ class ModelSelectionStore:
         try:
             self.path.unlink(missing_ok=True)
         except OSError as exc:
-            raise ModelSelectionError("モデル選択を解除できません") from exc
+            # モデル選択の解除失敗を通知します
+            raise ModelSelectionError(message_key='gateway.models.clearFailed') from exc
 
 
 def public_model_catalog(payload: object) -> dict:
     """Hermesのモデル一覧から、画面に必要な名前だけを残します。"""
     if not isinstance(payload, dict):
-        raise ModelSelectionError("Hermesモデル一覧の応答形式が正しくありません")
+        # Hermesモデル一覧の応答形式の異常を通知します
+        raise ModelSelectionError(message_key='gateway.models.responseFormat')
     providers = payload.get("providers")
     if not isinstance(providers, list):
-        raise ModelSelectionError("Hermesモデル一覧の応答形式が正しくありません")
+        # Hermesモデル一覧の応答形式の異常を通知します
+        raise ModelSelectionError(message_key='gateway.models.responseFormat')
 
     public_providers: list[dict] = []
     for row in providers:

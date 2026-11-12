@@ -67,6 +67,11 @@ export function readSessionMessages(data: unknown): Message[] {
     if ((message.role !== 'user' && message.role !== 'assistant') || typeof message.content !== 'string') return []
     // Hermesのツール呼び出し用assistant記録は本文が空なので、会話欄へ混ぜません。
     if (!message.content.trim()) return []
-    return [{ role: message.role, content: message.content } satisfies Message]
+    return [{ role: message.role, content: message.content,
+      // アプリが履歴へ付けた案内のキーを、画面の再読み込み後も維持します。
+      message_key: typeof message.message_key === 'string' ? message.message_key : undefined,
+      message_params: message.message_params && typeof message.message_params === 'object'
+        ? message.message_params as Record<string, unknown> : undefined,
+    } satisfies Message]
   })
 }
