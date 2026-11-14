@@ -1,7 +1,8 @@
-// 会話画面の画像操作を「＋」へ収納し、必要なときだけ共有の確認と操作を表示します。
+// 会話画面へ添付・共有アイコンを置き、共有の確認と停止だけを必要なときに表示します。
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 import type { useVisualInput } from '../hooks/useVisualInput'
+import SessionActionIcon from './SessionActionIcon'
 import { SharedScreenPreview } from './VisualInputPanel'
 
 interface ConversationVisualInputProps {
@@ -9,19 +10,21 @@ interface ConversationVisualInputProps {
   disabled: boolean
 }
 
-/** アバターとの会話領域を確保し、共有中もプレビューの常設を避けます。 */
+/** アイコンから直接操作できるようにし、共有プレビューは会話領域を常時覆わないようにします。 */
 export default function ConversationVisualInput({ visual, disabled }: ConversationVisualInputProps) {
   const [open, setOpen] = useState(false)
   const [panelPosition, setPanelPosition] = useState({ left: 0, maxHeight: 400 })
   const containerRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<HTMLInputElement>(null)
-  const toggleRef = useRef<HTMLButtonElement>(null)
+  const shareButtonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const panelId = useId()
+  const sharing = !!visual.stream || visual.starting
+  const shareLabel = visual.starting ? 'visual.selecting' : visual.stream ? 'visual.sharingDetails' : 'visual.share'
 
   useLayoutEffect(() => {
     if (!open) return
-    /** 操作列が折り返しても、メニューを画面内の余白へ収めます。 */
+    /** 操作列が折り返しても、プレビューを画面内の余白へ収めます。 */
     const placePanel = () => {
       const container = containerRef.current
       const panel = panelRef.current
@@ -37,7 +40,7 @@ export default function ConversationVisualInput({ visual, disabled }: Conversati
 
   useEffect(() => {
     if (!open) return
-    // キーボードでも入口へ戻れるようにし、外側の操作はそのまま通します。
+    // キーボードでも共有アイコンへ戻れるようにし、外側の操作はそのまま通します。
     const closeOutside = (event: PointerEvent) => {
       if (event.target instanceof Node && !containerRef.current?.contains(event.target)) setOpen(false)
     }
@@ -45,7 +48,7 @@ export default function ConversationVisualInput({ visual, disabled }: Conversati
       if (event.key !== 'Escape') return
       event.preventDefault()
       setOpen(false)
-      toggleRef.current?.focus()
+      shareButtonRef.current?.focus()
     }
     panelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
     document.addEventListener('pointerdown', closeOutside)
@@ -57,17 +60,17 @@ export default function ConversationVisualInput({ visual, disabled }: Conversati
   }, [open])
 
   useEffect(() => {
-    // 画面全体へのドロップでも、添付後は会話へ戻します。
-    if (visual.file) setOpen(false)
-  }, [visual.file])
+    // ブラウザ側の共有停止後も、空のプレビューだけが残らないようにします。
+    if (!sharing || visual.file) setOpen(false)
+  }, [sharing, visual.file])
 
-  /** 共有選択を直接操作内で起動し、選択ダイアログの後ろにメニューを残しません。 */
-  const startSharing = () => {
-    setOpen(false)
-    void visual.startSharing()
+  /** 共有開始は直接操作内で呼び出し、共有中は同じアイコンから確認と停止へ進みます。 */
+  const handleShare = () => {
+    if (sharing) setOpen((current) => !current)
+    else void visual.startSharing()
   }
 
-  /** メニューだけを閉じてファイル選択へ進み、キャンセル時も会話へ戻します。 */
+  /** ファイル選択の前にプレビューを閉じ、選択後は会話へ戻します。 */
   const selectImage = () => {
     setOpen(false)
     pickerRef.current?.click()
@@ -75,42 +78,37 @@ export default function ConversationVisualInput({ visual, disabled }: Conversati
 
   return (
     <div className="conversation-visual-control" ref={containerRef}>
-      <button ref={toggleRef} type="button" className="conversation-visual-toggle"
-        aria-label={t('visual.openActions')} title={t('visual.openActions')}
-        aria-expanded={open} aria-controls={open ? panelId : undefined}
-        onClick={() => setOpen((current) => !current)}>
-        <span aria-hidden="true">＋</span>
+      <button type="button" className="visual-button visual-icon-button conversation-visual-button"
+        aria-label={t('visual.attach')} title={t('visual.attach')}
+        disabled={disabled || visual.preparing} onClick={selectImage}>
+        <SessionActionIcon name="attach-image" />
       </button>
-      {(visual.stream || visual.starting) && (
-        <button type="button" className="conversation-sharing-status"
-          aria-label={t('visual.sharingDetails')} aria-expanded={open}
-          aria-controls={open ? panelId : undefined} onClick={() => setOpen((current) => !current)}>
-          <span className="conversation-sharing-dot" aria-hidden="true" />
-          {t(visual.starting ? 'visual.selecting' : 'visual.sharing')}
-        </button>
-      )}
+      <button ref={shareButtonRef} type="button"
+        className={`visual-button visual-icon-button conversation-visual-button${sharing ? ' sharing' : ''}`}
+        aria-label={t(shareLabel)} title={t(shareLabel)}
+        aria-pressed={!!visual.stream} aria-busy={visual.starting}
+        aria-expanded={sharing ? open : undefined} aria-controls={open ? panelId : undefined}
+        disabled={!sharing && disabled} onClick={handleShare}>
+        <SessionActionIcon name="share-screen" />
+      </button>
       <input ref={pickerRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
         onChange={(event) => {
           void visual.selectFiles(Array.from(event.target.files ?? []))
           event.target.value = ''
         }} />
-      {open && (
+      {open && sharing && (
         <div ref={panelRef} id={panelId} className="conversation-visual-popover" style={panelPosition}
-          role="dialog" aria-label={t('visual.openActions')}>
-          <button type="button" className="visual-button" disabled={disabled || visual.preparing}
-            onClick={selectImage}>{t('visual.attach')}</button>
-          {visual.stream || visual.starting ? (
-            <>
-              {visual.stream && <SharedScreenPreview stream={visual.stream} fileAttached={!!visual.file} />}
-              <button type="button" className="visual-button sharing" onClick={() => {
-                visual.stopSharing()
-                setOpen(false)
-              }}>{t('visual.stopSharing')}</button>
-            </>
-          ) : (
-            <button type="button" className="visual-button" disabled={disabled}
-              onClick={startSharing}>{t('visual.share')}</button>
-          )}
+          role="dialog" aria-label={t('visual.sharingDetails')}>
+          {visual.stream ? <SharedScreenPreview stream={visual.stream} fileAttached={!!visual.file} />
+            : <p role="status">{t('visual.selecting')}</p>}
+          <button type="button" className="visual-button stop-sharing" title={t('visual.stopSharing')}
+            onClick={() => {
+              visual.stopSharing()
+              setOpen(false)
+            }}>
+            <SessionActionIcon name="stop-sharing" />
+            {t('visual.stopSharing')}
+          </button>
         </div>
       )}
     </div>

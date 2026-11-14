@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react'
 import { t, translateMessage } from '../i18n'
 import type { useVisualInput } from '../hooks/useVisualInput'
+import SessionActionIcon from './SessionActionIcon'
 
 interface VisualInputPanelProps {
   visual: ReturnType<typeof useVisualInput>
@@ -37,20 +38,24 @@ export default function VisualInputPanel({ visual, disabled, compact = false }: 
     <div className={`visual-input${compact ? ' visual-input-compact' : ''}`}>
       {!compact && (
         <div className="visual-input-actions">
-          <button type="button" className="visual-button" disabled={disabled || visual.preparing}
-            onClick={() => pickerRef.current?.click()}>{t('visual.attach')}</button>
+          <button type="button" className="visual-button visual-icon-button" disabled={disabled || visual.preparing}
+            aria-label={t('visual.attach')} title={t('visual.attach')}
+            onClick={() => pickerRef.current?.click()}><SessionActionIcon name="attach-image" /></button>
           <input ref={pickerRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
             onChange={(event) => {
               void visual.selectFiles(Array.from(event.target.files ?? []))
               event.target.value = ''
             }} />
           {visual.stream || visual.starting ? (
-            <button type="button" className="visual-button sharing" onClick={visual.stopSharing}>
-              {t('visual.stopSharing')}
+            <button type="button" className="visual-button visual-icon-button sharing" onClick={visual.stopSharing}
+              aria-label={t('visual.stopSharing')} title={t('visual.stopSharing')}
+              aria-pressed={!!visual.stream} aria-busy={visual.starting}>
+              <SessionActionIcon name="stop-sharing" />
             </button>
           ) : (
-            <button type="button" className="visual-button" disabled={disabled}
-              onClick={() => void visual.startSharing()}>{t('visual.share')}</button>
+            <button type="button" className="visual-button visual-icon-button" disabled={disabled}
+              aria-label={t('visual.share')} title={t('visual.share')} aria-pressed={false}
+              onClick={() => void visual.startSharing()}><SessionActionIcon name="share-screen" /></button>
           )}
           <span className="visual-input-hint">{t(visual.dragging ? 'visual.dropHere' : 'visual.dropHint')}</span>
         </div>

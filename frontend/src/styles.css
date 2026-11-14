@@ -450,7 +450,13 @@ button, textarea { font: inherit; }
 .visual-input-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .composer button.visual-button { align-self: center; min-width: 0; padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: #f8fafc; font-size: 12px; }
 .composer button.visual-button:hover { background: #e2e8f0; }
-.composer button.visual-button.sharing { color: #991b1b; border-color: #fca5a5; background: #fff1f2; }
+/* 共有状態は色と押下状態で伝え、文字がなくてもタッチしやすい大きさを保ちます。 */
+.composer button.visual-icon-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; min-width: 44px; padding: 0; }
+.composer button.visual-button.sharing { color: #166534; border-color: #86efac; background: #f0fdf4; }
+.composer button.visual-button.sharing:hover { background: #dcfce7; }
+.composer button.visual-button.stop-sharing { color: #991b1b; border-color: #fca5a5; background: #fff1f2; }
+.composer button.visual-button.stop-sharing:hover { background: #ffe4e6; }
+.composer button.visual-button:focus-visible { outline: 2px solid #3b82f6; outline-offset: 3px; }
 .composer button.visual-button:disabled { opacity: 0.55; cursor: not-allowed; }
 .visual-input-hint { color: #64748b; font-size: 11px; }
 .visual-previews { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -477,12 +483,13 @@ button, textarea { font: inherit; }
 /* 会話中は既存の操作列へ入口だけを置き、未使用の画像パネルで画面を覆いません。 */
 .conversation-composer .composer-actions { flex-wrap: wrap; }
 .conversation-visual-control { position: relative; display: flex; flex: 0 0 auto; gap: 6px; }
-.conversation-composer button.conversation-visual-toggle { display: grid; place-items: center; min-width: 44px; width: 44px; padding: 0; border: 1px solid #ffffff38; color: #e2e8f0; background: #0f172acc; font-size: 25px; line-height: 1; }
-.conversation-composer button.conversation-visual-toggle:hover, .conversation-composer button.conversation-visual-toggle[aria-expanded="true"] { background: #334155e8; }
-.conversation-composer button.conversation-sharing-status { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 5px 8px; border: 1px solid #86efac66; color: #dcfce7; background: #052e16d9; font-size: 11px; }
-.conversation-sharing-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: #4ade80; }
+.conversation-composer button.conversation-visual-button { border-color: #ffffff38; color: #e2e8f0; background: #0f172acc; }
+.conversation-composer button.conversation-visual-button:hover, .conversation-composer button.conversation-visual-button[aria-expanded="true"] { background: #334155e8; }
+.conversation-composer button.conversation-visual-button.sharing { color: #86efac; border-color: #86efac88; background: #052e16e8; }
+.conversation-composer button.conversation-visual-button.sharing:hover { background: #14532de8; }
 .conversation-visual-popover { overflow-y: auto; position: absolute; z-index: 50; bottom: calc(100% + 10px); left: 0; display: grid; gap: 8px; width: min(300px, calc(100vw - 40px)); padding: 10px; border: 1px solid #ffffff38; border-radius: 12px; color: #e2e8f0; background: #0f172af5; box-shadow: 0 10px 30px #0006; }
-.conversation-visual-popover > button.visual-button { text-align: left; }
+.conversation-visual-popover > button.visual-button { display: flex; justify-content: center; align-items: center; gap: 8px; }
+.conversation-visual-popover > p { margin: 0; }
 .conversation-visual-popover .visual-preview { display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 100%; margin: 0; border: 0; padding: 0; background: transparent; }
 .conversation-visual-popover .visual-preview video { width: 100%; height: 145px; }
 .conversation-visual-popover .visual-preview span { color: #e2e8f0; }
