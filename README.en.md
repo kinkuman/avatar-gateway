@@ -6,6 +6,8 @@
 
 Avatar Gateway is a local conversation application that presents replies from HermesAgent through a VRM avatar, facial expressions, lip sync, and optional speech. The initial release focuses on conversations between one person and one AI in Firefox or a Chromium-based browser. It is distributed as source code for users who can install and operate Hermes Agent and its related services.
 
+> **Before you start:** What Avatar Gateway can do depends on the LLM you use and the capabilities of Hermes Agent. Using Avatar Gateway does not enable tasks that Hermes Agent itself cannot perform. The models used for verification were `Gemma4 26B A4B` and `Qwen3.8-Flash-Next`. Basic conversations and avatar behavior were verified with Gemma4, though tool calls were not always reliable. In our tests, `Qwen3.8-Flash-Next` performed very well as an agent.
+
 > New here? Start with the [Quick Start](QUICKSTART.en.md). It explains only what you need for your first conversation and defines technical terms as they appear.
 
 The application interface supports Japanese and English. Japanese is the default; you can change the display language in UI Settings.
@@ -26,6 +28,20 @@ The application interface supports Japanese and English. Japanese is the default
     - [Starting a New Session](#starting-a-new-session)
     - [Viewing Saved Conversations](#viewing-saved-conversations)
     - [Reconnecting to Active Work](#reconnecting-to-active-work)
+- [Basic Features and Settings](#basic-features-and-settings)
+    - [Changing the Display Language](#changing-the-display-language)
+    - [Saving the Starting Camera View](#saving-the-starting-camera-view)
+    - [Showing the Camera Controls Guide](#showing-the-camera-controls-guide)
+    - [Camera Controls](#camera-controls)
+    - [Background Images](#background-images)
+    - [Adjusting Audio](#adjusting-audio)
+    - [Showing Motion Preview Buttons](#showing-motion-preview-buttons)
+    - [Interacting with the Avatar](#interacting-with-the-avatar)
+        - [Responsive Regions](#responsive-regions)
+    - [Adjusting Hit Areas](#adjusting-hit-areas)
+    - [Viewing Hermes Skills and Toolsets](#viewing-hermes-skills-and-toolsets)
+    - [Face and Gaze Detection](#face-and-gaze-detection)
+    - [Saving and Resetting Settings](#saving-and-resetting-settings)
 - [Optional Features and Settings](#optional-features-and-settings)
     - [Speech Output (Optional)](#speech-output-optional)
         - [Set Up Style-Bert-VITS2](#set-up-style-bert-vits2)
@@ -39,32 +55,19 @@ The application interface supports Japanese and English. Japanese is the default
         - [Change the Speech Recognition Model](#change-the-speech-recognition-model)
     - [Screen Sharing and Image Attachments (Optional)](#screen-sharing-and-image-attachments-optional)
     - [Switching the LLM Model (Optional)](#switching-the-llm-model-optional)
-    - [UI Settings (Optional)](#ui-settings-optional)
-        - [Changing the Display Language](#changing-the-display-language)
-        - [Adding a Translation](#adding-a-translation)
-        - [Saving the Starting Camera View](#saving-the-starting-camera-view)
-        - [Showing the Camera Controls Guide](#showing-the-camera-controls-guide)
-        - [Background Images](#background-images)
-        - [Adjusting Audio](#adjusting-audio)
-        - [Showing Motion Preview Buttons](#showing-motion-preview-buttons)
-        - [Interacting with the Avatar](#interacting-with-the-avatar)
-            - [Responsive Regions](#responsive-regions)
-        - [Adjusting Hit Areas](#adjusting-hit-areas)
-        - [Face and Gaze Detection](#face-and-gaze-detection)
-        - [Saving and Resetting Settings](#saving-and-resetting-settings)
     - [Change the VRM (Optional)](#change-the-vrm-optional)
     - [Previewing VRMA Motions (Optional)](#previewing-vrma-motions-optional)
     - [Editing the Motion Catalog (Optional)](#editing-the-motion-catalog-optional)
-    - [Camera Controls (Optional)](#camera-controls-optional)
     - [Generated Images and 90-Day Retention (Optional)](#generated-images-and-90-day-retention-optional)
     - [Date and Time Context for Conversations (Optional)](#date-and-time-context-for-conversations-optional)
-    - [Viewing Hermes Skills and Toolsets (Optional)](#viewing-hermes-skills-and-toolsets-optional)
     - [Use from Another Device on the LAN (Optional)](#use-from-another-device-on-the-lan-optional)
     - [Use Another Hermes Profile (Optional)](#use-another-hermes-profile-optional)
+    - [Adding a Translation](#adding-a-translation)
     - [Start the Development Frontend (Optional)](#start-the-development-frontend-optional)
 - [Troubleshooting](#troubleshooting)
     - [Cannot Connect to Hermes](#cannot-connect-to-hermes)
-    - [Skill list API error: 502 in the Resources Screen](#skill-list-api-error-502-in-the-resources-screen)
+    - [Invalid host header in the Browser](#invalid-host-header-in-the-browser)
+    - [Skill list API error: 502 in the Features Screen](#skill-list-api-error-502-in-the-features-screen)
     - [Text Works but Speech Does Not](#text-works-but-speech-does-not)
     - [The VRM Is Not Displayed](#the-vrm-is-not-displayed)
     - [The Microphone Cannot Be Enabled](#the-microphone-cannot-be-enabled)
@@ -85,7 +88,7 @@ The application interface supports Japanese and English. Japanese is the default
 - Use optional Japanese microphone input with faster-whisper
 - Stop speech alone, or stop the entire Hermes task
 - Reconnect to active work after reloading the page
-- View Hermes Skills and Toolsets
+- View Hermes Skills and Toolsets; some Hermes versions do not support this screen ([troubleshooting](#skill-list-api-error-502-in-the-features-screen))
 - View, branch, and delete saved conversations
 - Display images generated by Hermes
 - Use VRM expressions, lip sync, idle movement, and motions
@@ -106,7 +109,7 @@ The application interface supports Japanese and English. Japanese is the default
 
 - Python 3.11 or later
 - Node.js 20 or later
-- HermesAgent API Server
+- HermesAgent API Server (included with Hermes Agent)
 
 Voice services and a replacement VRM are optional; see [Optional Features and Settings](#optional-features-and-settings).
 
@@ -200,7 +203,7 @@ During a conversation, the upper-left status shows actual stages reported by Her
 
 ![Task progress](docs/images/work_state.png)
 
-When Hermes uses tools, the conversation area shows tool name, start time, running, success or failure state, and any duration provided by Hermes. Avatar Gateway does not invent tool result text or file diffs that Hermes did not provide.
+When Hermes uses tools, progress appears below the conversation. You can review tool names, start times, running, success or failure states, and any durations provided by Hermes, in execution order. Messages, progress, and approvals share one scrolling area, while the composer stays at the bottom. Select `Collapse` to show only the progress heading. Avatar Gateway does not invent tool result text or file diffs that Hermes did not provide.
 
 When Hermes pauses for approval of a risky action, a yellow panel displays its explanation and a command with secrets removed. The choices are:
 
@@ -234,15 +237,19 @@ The action is disabled while Hermes is working, waiting for approval, synthesizi
 
 ![Saved sessions](docs/images/old_session.png)
 
-Select the arrow-around-a-clock icon labeled `Session history`. Avatar Gateway lists only sessions that it created, ordered by most recent update. It initially loads 50 entries.
+Select the arrow-around-a-clock icon labeled `Session history`. Avatar Gateway lists only sessions that it created, ordered by most recent update. Each entry shows whether it is the current session, whether it is ongoing or completed, its update time, message count, and tool execution count. Select an entry to view its official history. The first 50 entries are loaded initially; select `Load more` for older sessions.
 
 ![Session history](docs/images/session_history.png)
 
-Selecting an entry only previews its official history. It does not change the active destination session. An unfinished session can be reopened after Avatar Gateway refreshes its state. A completed session can be branched into a new child session without modifying the original history.
+Selecting an entry does not change the active destination session, and the composer is hidden while viewing history. Select `Back to conversation` to return to the conversation you had open.
 
-The details include message count, tool count, input, output and reasoning tokens, API calls, cost when available, and the parent session. Statistics not recorded by Hermes are shown as zero or unknown.
+For an unfinished entry, select `Open this session` to refresh its status and official history and resume it as the active conversation. Neither that session nor the conversation you previously had open is ended; you can reopen either later. If you have a draft, you are asked to confirm before discarding it and switching.
 
-For a completed session that is not currently open, `Delete this history` permanently deletes its conversation history from the Hermes SessionDB after confirmation. This cannot be undone. The backend refuses to delete an active session.
+For a completed entry, select `Continue this conversation` and confirm to create a new child session that inherits its history. The original completed session and history are preserved, and Hermes stores the parent-child relationship. This screen does not rename sessions.
+
+The details include message count, tool execution count, input, output and reasoning tokens, API calls, actual or estimated cost, and the parent session. Statistics not recorded by Hermes are shown as zero or unknown cost.
+
+For a completed session that is not currently open, `Delete this history` permanently deletes its conversation history from the Hermes SessionDB after confirmation. This cannot be undone. Child sessions are preserved, although Hermes may remove their reference to the parent. The backend also checks the session's ended status and refuses to delete an ongoing session.
 
 ### Reconnecting to Active Work
 
@@ -250,14 +257,176 @@ If the page is reloaded while Hermes is working, running tools, or waiting for a
 
 Previously generated audio is not played automatically after reconnecting. If the Avatar Gateway backend itself restarts, some live details and approval buttons may not be recoverable. Saved conversation history is loaded from Hermes. For safety, an approval button is not restored when its details cannot be recovered; the task can still be stopped.
 
+## Basic Features and Settings
+
+![UI settings](docs/images/setting.png)
+
+Select the gear icon labeled `Settings` to configure:
+
+- Display language: Japanese, English, or an added translation
+- Camera controls, saving the starting view, and returning to automatic framing
+- Whether camera instructions are shown over the avatar
+- VRM background and fitting mode
+- Audio: speech volume, approval speech, and microphone input settings
+- Whether motion preview buttons are shown
+- Avatar interaction, enabled body regions, and model-specific hit areas
+- [Face and gaze detection](#face-and-gaze-detection), including face following and gaze-triggered speech
+- Saving and resetting settings: browser overrides and server defaults
+
+### Changing the Display Language
+
+![Display language](docs/images/language.png)
+
+At the top of Settings, use `表示言語 / Language` to choose `日本語` or `English`. Buttons, descriptions, status labels, and fixed application notices switch immediately. The choice is saved in the current browser and remains after reloading the page. The bilingual selector label helps you find the control even if you cannot read the selected language.
+
+Changing the display language does not translate conversation history, change the language Hermes replies in, or rewrite your saved approval speech text. Date and number formatting remains unchanged.
+
+The language priority is:
+
+1. The language selected in this browser.
+2. The `language` value in `config/ui.json`, used as the server default.
+3. Japanese (`ja`) if no language is specified.
+
+To use your selection as the initial language for new browsers, select `Use current settings as server defaults` at the bottom of Settings and confirm. This saves the other current UI settings too. Existing selections in other browsers are not changed. `Reset browser settings` clears this browser's UI overrides and returns to the server defaults. You do not need a language entry in `.env` or a `config.yaml` file.
+
+If your language is not listed, see [Adding a Translation](#adding-a-translation).
+
+### Saving the Starting Camera View
+
+Move, rotate, and zoom the avatar with the mouse or touch, then select `Save current view` under `Camera` in Settings. This saves the starting view. Select `Reset to automatic` to return to the full-body position calculated when the model loaded. See [Camera Controls](#camera-controls) for gestures.
+
+### Showing the Camera Controls Guide
+
+Under `Display` in Settings, use `Camera controls guide` to show or hide the camera instructions and reset button over the avatar.
+
+### Camera Controls
+
+![Camera controls](docs/images/camera.png)
+
+When a VRM loads, the camera is automatically positioned so that the whole body fits on screen.
+
+```text
+Left drag: move vertically or horizontally
+Mouse wheel or middle drag: zoom
+Right drag: rotate the camera
+Touch: one finger rotates; two fingers zoom and move
+```
+
+Select `Reset camera` to return to the automatically calculated position.
+
+### Background Images
+
+![Background image settings](docs/images/wallpaper.png)
+
+Avatar Gateway includes square backgrounds intended to place a VRM near the center. Select one in Settings; no generation or copying is needed after cloning the project.
+
+- `cozy-streaming-room.png`: bright pastel room
+- `japanese-tatami-room.png`: tatami room with shoji and a garden
+- `cyber-neon-room.png`: blue-purple near-future room
+- `classic-library-room.png`: warm classic study with bookshelves
+- `fantasy-sky-room.png`: fantasy sky and clouds
+- `green-screen.png`: solid `#00ff00` green screen for compositing
+
+The bundled backgrounds, like the bundled VRMA files, are CC0. See the [Bundled Asset Licenses](ASSET_LICENSES.en.md).
+
+Place personal PNG, JPEG, or WebP files under:
+
+```text
+local-assets/backgrounds/
+```
+
+No backend restart is required. In Settings, select `Reload image list`, then choose a filename under `Background`. `Fill screen` fills the screen without margins, while `Fit entire image` shows the entire image without cropping. Select `No background` to return to the standard dark gradient.
+
+A local image with the same filename as a bundled background replaces it without modifying the product file. To use your image in another installation, place a file with the same name there too. Background images cannot be uploaded from the browser.
+
+### Adjusting Audio
+
+Under `Audio` in Settings, you can adjust:
+
+- Speech volume: set the volume from 0 to 100%.
+- Speech when requesting approval: the text read aloud when approval is requested. Leave it empty to disable this speech.
+- End-of-speech silence: set how long silence must last before an utterance ends, from 0.6 to 2.0 seconds.
+- Speech-detection sensitivity: raise the value if background noise triggers recording, or lower it if your voice is not detected.
+
+See [Microphone Input](#microphone-input-optional) for setup and usage.
+
+### Showing Motion Preview Buttons
+
+Under `Display` in Settings, use `Motion preview buttons` to show or hide the buttons for manually checking VRMA files. Keep them hidden during normal use and enable them when needed. See [Previewing VRMA Motions](#previewing-vrma-motions-optional) for usage.
+
+### Interacting with the Avatar
+
+![Avatar interaction mode](docs/images/fureai.png)
+
+Select `Touch` on the avatar screen to switch from camera controls to interaction mode. You can instead hold the Space key outside the text field to enable it temporarily.
+
+#### Responsive Regions
+
+![Avatar interaction regions](docs/images/fureai_setting.png)
+
+The head and hands respond by default. Ears and tail can be enabled in Settings. Clicking or tapping a region produces a physical reaction, and repeated touches are grouped and reported with their count. Dragging across a region is treated as stroking; the body part follows slightly and returns when released.
+
+`Test recoil only` is a debugging feature retained for testing avatar reactions. Leave it off during normal use.
+
+New interactions are not sent while Hermes is responding, running a tool, waiting for approval, or processing audio. Draft text in the normal input field is preserved.
+
+Settings can disable individual regions. Ears and tail are off by default.
+
+### Adjusting Hit Areas
+
+![Interaction hit area editor](docs/images/fureai_edit.png)
+
+If the interaction areas do not match the model, use `Show hitboxes` and `Edit hitboxes` to adjust them. Leave both off during normal use.
+
+After replacing a VRM, enable `Edit hitboxes` in Settings if its interaction areas need adjustment. Click a wireframe on the avatar, or select a region from the editor's `Hitbox` list. Drag the gizmo on the yellow selection and switch between `Move` and `Scale` to adjust it. Drag the editor heading to move its window; the position is saved in this browser. Select `Reset position` if you lose track of it. While editing, touches are not sent to Hermes.
+
+Ears and hands can be selected separately on each side. With `Link left and right` enabled, moving one side mirrors the change to the other side and keeps their dimensions matched. The tail uses one sphere; move and scale it, stretching it along the needed direction for a long tail. For an asymmetric body or outfit, disable linking and adjust each side independently. `Reset selected` restores only the selected region, while `Reset all` restores all adjustments for the current VRM.
+
+Adjustments are saved automatically in this browser when you release the gizmo, keyed by the VRM filename. They are applied again when you load a VRM with the same filename and do not affect differently named models. To use them in other browsers, select `Use current settings as server defaults` at the bottom of Settings to save them to `config/ui.json`.
+
+### Viewing Hermes Skills and Toolsets
+
+![Hermes Skills and Toolsets](docs/images/skill_and_tools.png)
+
+Select the four-tile icon labeled `Features` at the top of the chat to see what the Hermes API Server currently exposes to the agent:
+
+- Enabled Toolsets and the tool names they expose
+- Configured Toolsets that are disabled or incomplete
+- Available Skill names, categories, and descriptions
+
+This screen is read-only. Avatar Gateway does not change Hermes Skill or Toolset settings. To change what appears, configure Hermes, then select `Reload`.
+
+If `Skill list API error: 502` appears, see [the troubleshooting steps](#skill-list-api-error-502-in-the-features-screen).
+
+### Face and Gaze Detection
+
+![Camera access permission](docs/images/camera_allow.png)
+
+In Settings, open `Face and gaze detection` to enable webcam features. `Speak when you look at the camera` and `Follow face position` are off by default. Allow camera access when your browser asks.
+
+- **Follow face position**: Turns the avatar's eyes and face toward a face in the webcam image. If a face is registered, only that person is followed. Otherwise, the largest visible face is followed. This feature alone requires no additional Hermes setup.
+- **Speak when you look at the camera**: Select `Register face` to register your face, then enable this option. When the registered face turns toward the camera, the avatar reads prepared messages aloud. If there is no message to read, it performs a short gesture.
+- **Improve face detection visibility**: Use this when faces are difficult to detect in low light. It adjusts the brightness and other detection settings for the image used for detection.
+- **Sync gaze-triggered speech to messages**: Sends the spoken content to Hermes together with your next message so the conversation can continue from it.
+
+Reading prepared messages requires speech output to be configured, along with a dedicated Skill and cron job in Hermes. Open [Instructions to send to Hermes](docs/gaze_speech_hermes.md) (in Japanese) and send the supplied instructions to Hermes's own chat to set them up. Only new output generated after Avatar Gateway starts is eligible to be read aloud.
+
+Camera images are not saved. The registered face's features are stored in the current browser. `Reset browser settings` does not remove the face registration; select `Clear registration` to delete it.
+
+### Saving and Resetting Settings
+
+Changes are saved automatically in the current browser and remain after reloading the page. Select `Reset browser settings` to clear this browser's overrides and return to the server defaults. Face registration is preserved; use `Clear registration` under `Face and gaze detection` to remove it.
+
+To use the current settings as defaults for new browsers, select `Use current settings as server defaults` and confirm. Existing settings in other browsers are not changed. Secrets and server-specific paths are not editable here.
+
 ## Optional Features and Settings
 
 Text chat works with the steps above. Choose the features you want to use:
 
 - Voice: [speech output](#speech-output-optional) / [microphone input](#microphone-input-optional)
 - Sharing: [screens and images](#screen-sharing-and-image-attachments-optional)
-- Conversation: [LLM model](#switching-the-llm-model-optional) / [date and time](#date-and-time-context-for-conversations-optional) / [Skills and Toolsets](#viewing-hermes-skills-and-toolsets-optional)
-- Appearance: [UI settings](#ui-settings-optional) / [VRM](#change-the-vrm-optional) / [motion previews](#previewing-vrma-motions-optional) / [motion catalog](#editing-the-motion-catalog-optional) / [camera](#camera-controls-optional)
+- Conversation: [LLM model](#switching-the-llm-model-optional) / [date and time](#date-and-time-context-for-conversations-optional) / [Skills and Toolsets](#viewing-hermes-skills-and-toolsets)
+- Appearance: [VRM](#change-the-vrm-optional) / [motion previews](#previewing-vrma-motions-optional) / [motion catalog](#editing-the-motion-catalog-optional) / [camera](#camera-controls)
 - Setup: [generated images](#generated-images-and-90-day-retention-optional) / [LAN access](#use-from-another-device-on-the-lan-optional) / [Hermes Profile](#use-another-hermes-profile-optional) / [development frontend](#start-the-development-frontend-optional)
 
 ### Speech Output (Optional)
@@ -320,6 +489,8 @@ After downloading, follow the README in that copy of Style-Bert-VITS2 to install
 
 #### OpenAI-Compatible Speech Output
 
+Speech output can use Style-Bert-VITS2 or an OpenAI-compatible API. Select the provider with `AVATAR_GATEWAY_TTS_PROVIDER`; the default is Style-Bert-VITS2.
+
 Instead of Style-Bert-VITS2, you can use `speech serve` from [speech.cpp](https://github.com/nyosegawa/speech.cpp) or OpenAI's own `POST /v1/audio/speech`. Set the provider to `openai` and configure the endpoint and voice:
 
 ```env
@@ -341,7 +512,7 @@ An empty `OPENAI_TTS_MODEL` uses whichever synthesis model the server holds. `OP
 
 ![Microphone controls](docs/images/mic.png)
 
-Select `Mic ON` and allow microphone access in the browser. When `Waiting for speech` appears, speak normally. After 0.8 seconds of silence by default, Avatar Gateway ends the recording, transcribes it with the configured speech recognition service, and sends the text to Hermes.
+Select `Mic ON` and allow microphone access in the browser. When `Waiting for speech` appears, speak normally. After 0.8 seconds of silence by default, Avatar Gateway ends the recording, transcribes it with the configured speech recognition service, and sends the text to Hermes. The recognized text appears in conversation history as a normal user message.
 
 The microphone remains ready for the next utterance until you select `Mic OFF` or close the page. If you begin speaking while the avatar is talking or Hermes is working, Avatar Gateway stops the current task and speech so that the new utterance can take priority.
 
@@ -356,6 +527,8 @@ Configure either faster-whisper or an OpenAI-compatible API below. If microphone
 
 ![Speech recognition settings](docs/images/stt.png)
 
+Use either faster-whisper or an OpenAI-compatible API for speech recognition. To use an API service, see [OpenAI-Compatible Microphone Input](#openai-compatible-microphone-input).
+
 Microphone input is also disabled in the public configuration example. Set `FASTER_WHISPER_ENABLED=true` to enable it. The default configuration uses CPU INT8 processing so that speech recognition does not consume the GPU memory used by the LLM.
 
 ```env
@@ -369,7 +542,9 @@ FASTER_WHISPER_BEAM_SIZE=3
 FASTER_WHISPER_LOCAL_FILES_ONLY=true
 ```
 
-Avatar Gateway never downloads a Whisper model during normal startup. After installing the backend requirements, use the explicit download command below to place the selected model under `local-assets/whisper/`. If the model is missing, only microphone input is disabled; text chat and speech output continue to work.
+Avatar Gateway never downloads a Whisper model during normal startup. After installing the backend requirements, use the explicit download command below to place the selected model under `local-assets/whisper/`. If the model is missing, only microphone input is disabled; text chat and speech output continue to work. To compare speed and accuracy, set another `FASTER_WHISPER_MODEL` before downloading.
+
+Set `FASTER_WHISPER_ENABLED=false` when microphone input is not needed. Text input and speech output remain available.
 
 Stop the backend, then run these commands from the project root. Downloading requires an internet connection. The last command starts the backend again.
 
@@ -444,15 +619,20 @@ Start the backend after the download finishes. The model goes to the default loc
 
 ### Screen Sharing and Image Attachments (Optional)
 
-In Conversation view, select **＋** in the bottom controls to attach an image or share a screen. The panel stays closed until you open it. Select the small **Sharing** indicator to view the preview or stop sharing. You can also drop an image directly onto Conversation view. A small thumbnail appears only while an attachment is waiting to be sent.
+![Screen sharing and image attachment controls](docs/images/attach_and_share.png)
 
-Ask the avatar about a screen or image using the usual message box or microphone. The model connected through Hermes must support image input.
+Select the paperclip icon to attach an image, or the monitor-and-arrow icon to share a screen. Hover over an icon to see its action name. The screen sharing icon turns green while sharing. In Conversation view, select the active sharing icon to open the preview and **Stop sharing** control. You can also drop an image directly onto Conversation view. A small thumbnail appears only while an attachment is waiting to be sent.
+
+Ask the avatar about a screen or image using the usual message box or microphone. `The model connected through Hermes must support image input.`
 
 **To share a screen**
 
-1. Select **Share screen** in the conversation composer.
+1. Select the monitor-and-arrow icon (**Share screen**) in the conversation composer.
 2. In the browser picker, choose a screen, window, or tab. Available options depend on the browser and OS.
 3. Check the preview, then send a question or speak into the microphone. Each question includes one image of the screen at the time you send it.
+
+![Shared screen preview](docs/images/display_share_preview.png)
+
 4. Select **Stop sharing** to finish. The browser's own stop button also ends sharing.
 
 Screen sharing requires a connection the browser recognizes as a secure context. HTTPS is recommended when connecting from another PC on a LAN. To use HTTP in Firefox, [register the host as a secure context](#using-firefox-screen-sharing-over-http-on-a-lan). HTTP works on localhost. If capture is unavailable, keep the shared source visible and check that the preview updates.
@@ -471,151 +651,12 @@ Avatar Gateway does not persist input images. Previews are held temporarily in t
 
 ### Switching the LLM Model (Optional)
 
-Select **Switch model**, to the right of **Resources** at the top of the chat, to open the models published by Hermes. Type a name in **Filter models**, then choose a model from the provider you want. Configure that provider's credentials in Hermes first.
+![LLM model selection](docs/images/change_llm.png)
+
+Select **Switch model**, to the right of **Features** at the top of the chat, to open the models published by Hermes. Type a name in **Filter models**, then choose a model from the provider you want. Configure that provider's credentials in Hermes first.
 
 Your choice applies from the next message and is saved across Avatar Gateway restarts. Select **Default model** in the same list to return to the default. This control is unavailable if Hermes does not support the model-list API.
 
-### UI Settings (Optional)
-
-![UI settings](docs/images/setting.png)
-
-Select the gear icon labeled `Settings` to configure:
-
-- Display language: Japanese, English, or an added translation
-- Camera controls, saving the starting view, and returning to automatic framing
-- Whether camera instructions are shown over the avatar
-- VRM background and fitting mode
-- Audio: speech volume, approval speech, and microphone input settings
-- Whether motion preview buttons are shown
-- Avatar interaction, enabled body regions, and model-specific hit areas
-- [Face and gaze detection](#face-and-gaze-detection), including face following and gaze-triggered speech
-- Saving and resetting settings: browser overrides and server defaults
-
-#### Changing the Display Language
-
-![Display language](docs/images/language.png)
-
-At the top of Settings, use `表示言語 / Language` to choose `日本語` or `English`. Buttons, descriptions, status labels, and fixed application notices switch immediately. The choice is saved in the current browser and remains after reloading the page. The bilingual selector label helps you find the control even if you cannot read the selected language.
-
-Changing the display language does not translate conversation history, change the language Hermes replies in, or rewrite your saved approval speech text. Date and number formatting remains unchanged.
-
-The language priority is:
-
-1. The language selected in this browser.
-2. The `language` value in `config/ui.json`, used as the server default.
-3. Japanese (`ja`) if no language is specified.
-
-To use your selection as the initial language for new browsers, select `Use current settings as server defaults` at the bottom of Settings and confirm. This saves the other current UI settings too. Existing selections in other browsers are not changed. `Reset browser settings` clears this browser's UI overrides and returns to the server defaults. You do not need a language entry in `.env` or a `config.yaml` file.
-
-#### Adding a Translation
-
-Bundled translations are stored in `assets/locales/ja.json` and `assets/locales/en.json`. These JSON files also contain the text for fixed notices and errors returned by the backend.
-
-As with VRM models and backgrounds, place your own translations under `local-assets/`. For example, run these commands from the Avatar Gateway folder to start an Indonesian translation:
-
-```bash
-mkdir -p local-assets/locales
-cp assets/locales/en.json local-assets/locales/id.json
-```
-
-1. Open `id.json` in a text editor and change `_meta.name` to `Bahasa Indonesia`. This name appears in the language selector.
-2. Keep keys such as `settings.title` unchanged and translate the English text on the right. Preserve placeholders such as `{{count}}` and `{{status}}`, along with file paths and configuration names. We recommend keeping the bilingual `表示言語 / Language` text for `settings.language` so the selector stays easy to find.
-3. Save valid JSON, then reload the browser page. Select `Bahasa Indonesia` from the language list in Settings. Adding or editing only translation JSON files requires neither a frontend rebuild nor a backend restart.
-
-Additional language files in `assets/locales/` are also recognized. If both directories contain the same language and key, the text in `local-assets/locales/` takes priority. To customize only part of the bundled English translation, create `local-assets/locales/en.json` with `_meta.name` and just the keys you want to replace.
-
-For a partial override of a bundled language, unchanged keys keep their bundled translations. Other missing translations fall back to Japanese. Invalid JSON files are skipped and reported in the backend logs. Entries whose placeholders differ from the Japanese resource are ignored. If a saved language is no longer available, the interface falls back to Japanese.
-
-#### Saving the Starting Camera View
-
-Move, rotate, and zoom the avatar with the mouse or touch, then select `Save current view` under `Camera` in Settings. This saves the starting view. Select `Reset to automatic` to return to the full-body position calculated when the model loaded. See [Camera Controls](#camera-controls-optional) for gestures.
-
-#### Showing the Camera Controls Guide
-
-Under `Display` in Settings, use `Camera controls guide` to show or hide the camera instructions and reset button over the avatar.
-
-#### Background Images
-
-![Background image settings](docs/images/wallpaper.png)
-
-Avatar Gateway includes square backgrounds intended to place a VRM near the center:
-
-- `cozy-streaming-room.png`: bright pastel room
-- `japanese-tatami-room.png`: tatami room with shoji and a garden
-- `cyber-neon-room.png`: blue-purple near-future room
-- `classic-library-room.png`: warm classic study with bookshelves
-- `fantasy-sky-room.png`: fantasy sky and clouds
-- `green-screen.png`: solid `#00ff00` green screen
-
-The bundled backgrounds are CC0. See the [Bundled Asset Licenses](ASSET_LICENSES.en.md).
-
-Place personal PNG, JPEG, or WebP files under:
-
-```text
-local-assets/backgrounds/
-```
-
-No backend restart is required. In Settings, select `Reload image list`, then select the filename. A local file with the same name as a bundled background replaces it without modifying the product file.
-
-#### Adjusting Audio
-
-Under `Audio` in Settings, you can adjust:
-
-- Speech volume: set the volume from 0 to 100%.
-- Speech when requesting approval: the text read aloud when approval is requested. Leave it empty to disable this speech.
-- End-of-speech silence: set how long silence must last before an utterance ends, from 0.6 to 2.0 seconds.
-- Speech-detection sensitivity: raise the value if background noise triggers recording, or lower it if your voice is not detected.
-
-See [Microphone Input](#microphone-input-optional) for setup and usage.
-
-#### Showing Motion Preview Buttons
-
-Under `Display` in Settings, use `Motion preview buttons` to show or hide the buttons for manually checking VRMA files. Keep them hidden during normal use and enable them when needed. See [Previewing VRMA Motions](#previewing-vrma-motions-optional) for usage.
-
-#### Interacting with the Avatar
-
-![Avatar interaction mode](docs/images/fureai.png)
-
-Select `Touch` on the avatar screen to switch from camera controls to interaction mode. You can instead hold the Space key outside the text field to enable it temporarily.
-
-##### Responsive Regions
-
-![Avatar interaction regions](docs/images/fureai_setting.png)
-
-The head and hands respond by default. Ears and tail can be enabled in Settings. Clicking or tapping a region produces a physical reaction, and repeated touches are grouped and reported with their count. Dragging across a region is treated as stroking; the body part follows slightly and returns when released.
-
-`Test recoil only` is a debugging feature retained for testing avatar reactions. Leave it off during normal use.
-
-New interactions are not sent while Hermes is responding, running a tool, waiting for approval, or processing audio. Draft text in the normal input field is preserved.
-
-Settings can disable individual regions. Ears and tail are off by default.
-
-#### Adjusting Hit Areas
-
-![Interaction hit area editor](docs/images/fureai_edit.png)
-
-If a model does not match the interaction areas, use the hit-area display and editor to adjust them. Changes are saved per VRM filename and can also be saved as the server defaults.
-
-#### Face and Gaze Detection
-
-![Camera access permission](docs/images/camera_allow.png)
-
-In Settings, open `Face and gaze detection` to enable webcam features. `Speak when you look at the camera` and `Follow face position` are off by default. Allow camera access when your browser asks.
-
-- **Follow face position**: Turns the avatar's eyes and face toward a face in the webcam image. If a face is registered, only that person is followed. Otherwise, the largest visible face is followed. This feature alone requires no additional Hermes setup.
-- **Speak when you look at the camera**: Select `Register face` to register your face, then enable this option. When the registered face turns toward the camera, the avatar reads prepared messages aloud. If there is no message to read, it performs a short gesture.
-- **Improve face detection visibility**: Use this when faces are difficult to detect in low light. It adjusts the brightness and other detection settings for the image used for detection.
-- **Sync gaze-triggered speech to messages**: Sends the spoken content to Hermes together with your next message so the conversation can continue from it.
-
-Reading prepared messages requires speech output to be configured, along with a dedicated Skill and cron job in Hermes. Open [Instructions to send to Hermes](docs/gaze_speech_hermes.md) (in Japanese) and send the supplied instructions to Hermes's own chat to set them up. Only new output generated after Avatar Gateway starts is eligible to be read aloud.
-
-Camera images are not saved. The registered face's features are stored in the current browser. `Reset browser settings` does not remove the face registration; select `Clear registration` to delete it.
-
-#### Saving and Resetting Settings
-
-Changes are saved automatically in the current browser and remain after reloading the page. Select `Reset browser settings` to clear this browser's overrides and return to the server defaults. Face registration is preserved; use `Clear registration` under `Face and gaze detection` to remove it.
-
-To use the current settings as defaults for new browsers, select `Use current settings as server defaults` and confirm. Existing settings in other browsers are not changed. Secrets and server-specific paths are not editable here.
 ### Change the VRM (Optional)
 
 ![Change the avatar](docs/images/avatar_change.png)
@@ -636,7 +677,7 @@ To use another VRM, copy the VRM file into:
 local-assets/vrm/
 ```
 
-The `local-assets/vrm/` folder is for VRM files added by the user.
+The `local-assets/vrm/` folder is for VRM files added by the user and is excluded from Git tracking.
 
 Then set `AVATAR_VRM_FILE` in `.env` to the name of the copied file:
 
@@ -654,7 +695,9 @@ Finished VRMA files are bundled under `assets/motions/`. No conversion or genera
 
 The bundled VRMA files are provided under CC0. Attribution is not required, and use, modification, redistribution, and commercial use are unrestricted. See the [Bundled Asset Licenses](ASSET_LICENSES.en.md).
 
-Enable motion preview buttons in Settings to play registered motions. You can also drag and drop a `.vrma` file onto the avatar in Standard view, or select `Try a VRMA`. The temporary file is played only in the browser, is not uploaded, and is forgotten on reload.
+Enable motion preview buttons in Settings to play registered motions. Select `Stop` to return to the idle pose.
+
+To try an unregistered VRMA, drag and drop a `.vrma` file onto the avatar in Standard view, or select `Try a VRMA`. The temporary file is played only in the browser, is not uploaded, and is forgotten on reload.
 
 During a conversation, registered motions and expressions change automatically to match the Hermes reply.
 
@@ -697,26 +740,11 @@ To add a bundled motion:
 4. Confirm that the preview button appears.
 5. Trigger a matching reply and confirm automatic selection during speech.
 
-Personal VRMA files can be placed under `local-assets/motions/`. A local file with the same name takes priority over a bundled file.
+Personal VRMA files can be placed under `local-assets/motions/`. A local file with the same name takes priority over a bundled file. For a new filename, also register it in `config/motions.json`, just as you would a bundled motion.
 
 An invalid catalog stops only motion integration; text chat and speech continue. The screen reports the reason, and missing motion files are excluded from the choices sent to Hermes.
 
 If a VRMA intended as a static pose returns immediately after playing, set `"playback": "pose"` for that catalog entry.
-
-### Camera Controls (Optional)
-
-![Camera controls](docs/images/camera.png)
-
-When a VRM loads, the camera is automatically positioned so that the whole body fits on screen.
-
-```text
-Left drag: move vertically or horizontally
-Mouse wheel or middle drag: zoom
-Right drag: rotate the camera
-Touch: one finger rotates; two fingers zoom and move
-```
-
-Select `Reset camera` to return to the automatically calculated position.
 
 ### Generated Images and 90-Day Retention (Optional)
 
@@ -741,7 +769,7 @@ The Avatar Gateway backend must be able to access the cache as local files. If H
 
 ![Date and time context](docs/images/datetime.png)
 
-Whenever a conversation starts, the Avatar Gateway backend sends HermesAgent the current date, time, time of day, and the time of the previous user message. This applies to text input, voice input, and avatar interactions. It does not make the avatar start conversations on its own.
+Whenever you send a message, the Avatar Gateway backend sends HermesAgent the current date, time, time of day, and the time of the previous user message. This applies to text input, voice input, and avatar interactions. It does not make the avatar start conversations on its own.
 
 The default time zone is Japan Standard Time (`Asia/Tokyo`), even when the server operating system uses UTC. To use another region, add a value such as the following to `.env`, then restart the backend:
 
@@ -758,21 +786,11 @@ If the setting is omitted, `Asia/Tokyo` is used. An invalid time-zone name preve
 | `evening` | 18:00–22:59 |
 | `night` | 23:00–04:59 |
 
-The previous conversation time is also provided within the same session, allowing Hermes to respond with the passage of time in mind. A new session is treated as the first conversation.
-
-### Viewing Hermes Skills and Toolsets (Optional)
-
-![Hermes Skills and Toolsets](docs/images/skill_and_tools.png)
-
-Select the four-tile icon labeled `Features` to view:
-
-- Enabled Toolsets and the tool names they expose
-- Configured Toolsets that are disabled or incomplete
-- Available Skill names, categories, and descriptions
-
-This screen is read-only. Change Skill and Toolset configuration in Hermes, then select `Reload`.
+The previous conversation time is also provided within the same session, allowing Hermes to respond with the passage of time in mind. A new session is treated as the first conversation. To restore the default time zone, remove `AVATAR_GATEWAY_TIMEZONE` from `.env` or set it back to `Asia/Tokyo`, then restart the backend.
 
 ### Use from Another Device on the LAN (Optional)
+
+![Access from another device](docs/images/other_device_access.png)
 
 For LAN access, do not use the Vite development server. Use the frontend built in the normal setup so that FastAPI serves the entire application from one origin. Add settings such as these to `.env`:
 
@@ -786,6 +804,8 @@ AVATAR_GATEWAY_ALLOWED_HOSTS=192.168.1.20,avatar-gateway.local
 ```
 
 `AVATAR_GATEWAY_ALLOWED_HOSTS` lists the server IP addresses or hostnames that users type into the browser, not the client device addresses. Separate multiple values with commas. `*` is not allowed.
+
+If the browser shows `Invalid host header`, check `AVATAR_GATEWAY_ALLOWED_HOSTS` and see [the troubleshooting steps](#invalid-host-header-in-the-browser).
 
 ```bash
 cd frontend
@@ -844,6 +864,25 @@ If the screen reports that Hermes does not support the Capabilities API, check t
 
 To return to the default Profile, restore the values shown in [Initial Configuration](#1-initial-configuration) and restart the Avatar Gateway backend.
 
+### Adding a Translation
+
+Bundled translations are stored in `assets/locales/ja.json` and `assets/locales/en.json`. These JSON files also contain the text for fixed notices and errors returned by the backend.
+
+As with VRM models and backgrounds, place your own translations under `local-assets/`. For example, run these commands from the Avatar Gateway folder to start an Indonesian translation:
+
+```bash
+mkdir -p local-assets/locales
+cp assets/locales/en.json local-assets/locales/id.json
+```
+
+1. Open `id.json` in a text editor and change `_meta.name` to `Bahasa Indonesia`. This name appears in the language selector.
+2. Keep keys such as `settings.title` unchanged and translate the English text on the right. Preserve placeholders such as `{{count}}` and `{{status}}`, along with file paths and configuration names. We recommend keeping the bilingual `表示言語 / Language` text for `settings.language` so the selector stays easy to find.
+3. Save valid JSON, then reload the browser page. Select `Bahasa Indonesia` from the language list in Settings. Adding or editing only translation JSON files requires neither a frontend rebuild nor a backend restart.
+
+Additional language files in `assets/locales/` are also recognized. If both directories contain the same language and key, the text in `local-assets/locales/` takes priority. To customize only part of the bundled English translation, create `local-assets/locales/en.json` with `_meta.name` and just the keys you want to replace.
+
+For a partial override of a bundled language, unchanged keys keep their bundled translations. Other missing translations fall back to Japanese. Invalid JSON files are skipped and reported in the backend logs. Entries whose placeholders differ from the Japanese resource are ignored. If a saved language is no longer available, the interface falls back to Japanese.
+
 ### Start the Development Frontend (Optional)
 
 Run the Vite development server separately from the backend only when you are developing the interface and need changes to appear immediately. It is not required for normal use.
@@ -887,11 +926,23 @@ Point the Avatar Gateway `.env` at the same address:
 HERMES_BASE_URL=http://192.168.2.168:8642/v1
 ```
 
-### `Skill list API error: 502` in the Resources Screen
+### Invalid host header in the Browser
 
-Some current Hermes revisions return an internal error for `GET /v1/skills`. The Avatar Gateway resources screen cannot load in this case, but normal conversations and task execution still work. Changing Avatar Gateway connection settings does not fix this Hermes-side problem.
+In LAN mode, `TrustedHostMiddleware` checks the requested IP address or hostname against the allowed-host list. A name that is not listed causes both the interface and APIs to return HTTP 400 with `Invalid host header`.
 
-To apply a temporary Hermes-side fix, inspect `APIServerAdapter._handle_skills` in `gateway/platforms/api_server.py`. The current `tools.skills_tool._find_all_skills` definition accepts only `skip_disabled`, so do not pass the unsupported `include_editorial` argument:
+Open `.env` in the project root and add the server IP address or hostname used in the browser to `AVATAR_GATEWAY_ALLOWED_HOSTS`. For example, if you open `http://linuxbox1:8000`, add `linuxbox1`. Do not include the port number.
+
+```env
+AVATAR_GATEWAY_ALLOWED_HOSTS=127.0.0.1,localhost,192.168.2.168,linuxbox1
+```
+
+Restart the backend after changing the setting, then reopen the same URL. If you use an IP address and DHCP changes it, update this setting too. When checking `/api/health`, use the same IP address or hostname as in the browser.
+
+### `Skill list API error: 502` in the Features Screen
+
+Some Hermes versions return an internal error for `GET /v1/skills`, preventing Avatar Gateway's Features screen from loading. Normal conversations and task execution are unaffected. Check the Hermes logs and version first, and update if a fixed version is available.
+
+If the Hermes log reports that `_find_all_skills` received an unsupported `include_editorial` argument, `APIServerAdapter._handle_skills` in `gateway/platforms/api_server.py` is the place for a temporary fix. Inspect the definition of `tools.skills_tool._find_all_skills` in your version. If it accepts only `skip_disabled`, call it as follows. If it already uses this form, no temporary change is needed.
 
 ```python
 skills = _sort_skills(
@@ -899,7 +950,7 @@ skills = _sort_skills(
 )
 ```
 
-Restart Hermes Gateway and confirm that `GET /v1/skills` succeeds, then select `Reload` in Avatar Gateway. Prefer the upstream implementation after an official fix is merged.
+Restart Hermes Gateway and confirm that `GET /v1/skills` succeeds, then select `Reload` in Avatar Gateway's Features screen. This is a temporary Hermes-side fix; prefer the upstream implementation once an official fix is merged.
 
 ### Text Works but Speech Does Not
 
@@ -979,15 +1030,18 @@ Use these steps when opening Avatar Gateway over HTTP in Firefox on a trusted ho
 1. Enter `about:config` in Firefox's address bar.
 2. Accept the warning to open the advanced settings.
 3. Search for `dom.securecontext.allowlist`. Edit the existing entry, or select **String** and the **＋** button to create it if it is missing.
-4. Save **only the IP address or hostname** used to open Avatar Gateway. For example, if the address is `http://192.168.1.20:8000`, enter:
+
+![Firefox secure-context allowlist](docs/images/firefox_allowlist.png)
+
+4. Save **only the IP address or hostname** used to open Avatar Gateway. For example, if the address is `http://192.168.2.168:8000`, enter:
 
    ```text
-   192.168.1.20
+   192.168.2.168
    ```
 
    Omit `http://`, `:8000`, and the trailing `/`. If other hosts are already listed, preserve them and add this host separated by a comma.
 5. Reload the Avatar Gateway page.
-6. Select **Share screen** and choose a screen or window. In Conversation view, select **＋** in the bottom controls to reveal **Share screen**.
+6. Select **Share screen** and choose a screen or window. In Conversation view, use the monitor-and-arrow icon in the bottom controls.
 
 Setting the microphone preferences `media.devices.insecure.enabled` and `media.getusermedia.insecure.enabled` to `true` is not sufficient to enable screen sharing. Register the host as described above. When the exception is no longer needed, remove the host you added from `dom.securecontext.allowlist`.
 
@@ -1016,6 +1070,8 @@ Avatar Gateway uses the following open-source software:
 - [FastAPI](https://github.com/fastapi/fastapi): backend API
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper): optional speech recognition
 - [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2): optional external speech synthesis service
+- [speech.cpp](https://github.com/nyosegawa/speech.cpp): optional speech synthesis and recognition service
+- [@vladmandic/face-api](https://github.com/vladmandic/face-api): webcam face detection and matching
 
 Each project remains subject to its own license. See the [Third-Party Software Notices](THIRD_PARTY_NOTICES.md) for a summary of their roles and licenses.
 
