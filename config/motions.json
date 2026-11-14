@@ -15,7 +15,7 @@
       "label": "前屈み",
       "file": "前屈み姿勢.vrma",
       "prompt": "興味を持って身を乗り出す、注意深く聞く返答",
-      "exit_duration_seconds": 1.2,
+      "exit_duration_seconds": 3,
       "enabled": true
     },
     {
