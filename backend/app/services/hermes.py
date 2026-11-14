@@ -12,6 +12,7 @@ from uuid import uuid4
 import httpx
 
 from ..config import Settings
+from .input_images import build_image_input, present_image_input
 from .daily_state import present_daily_input
 from .model_selection import ModelSelectionError, ModelSelectionStore, SelectedHermesModel
 REQUIRED_AGENT_FEATURES = (
@@ -137,7 +138,7 @@ class HermesSessionMessage:
         result = dict(self.data)
         # 保存された日時はLLM再送用に残し、会話欄やふれあい表示には混ぜません。
         if result.get("role") == "user" and isinstance(result.get("content"), str):
-            result["content"] = present_daily_input(result["content"])
+            result["content"] = present_image_input(present_daily_input(result["content"]))
         return result
 
 
@@ -651,12 +652,13 @@ class HermesClient:
         user_input: str,
         conversation_history: list[dict[str, str]],
         instructions: str | None = None,
+        image: str | None = None,
     ) -> dict[str, Any]:
         """所有セッションと明示的な履歴を渡し、Hermes Runを非同期で開始します。"""
         self._require_owned_session_id(session_id)
         selected = self._saved_model()
         body: dict[str, Any] = {
-            "input": user_input,
+            "input": build_image_input(user_input, image) if image is not None else user_input,
             "session_id": session_id,
             "model": selected.model if selected else self._config.hermes_model,
             "conversation_history": conversation_history,

@@ -427,6 +427,7 @@ class HermesRunCoordinator:
         session_id: str,
         user_input: str,
         instructions: str | None = None,
+        image: str | None = None,
     ) -> dict[str, Any]:
         """正式履歴を添えてRunを開始し、ブラウザ応答前に上流SSE購読を予約します。"""
         self._prune_records()
@@ -440,6 +441,7 @@ class HermesRunCoordinator:
             build_daily_input(user_input, messages, self._timezone),
             self._conversation_history(messages),
             instructions,
+            **({"image": image} if image is not None else {}),
         )
         record = _RunRecord(
             run_id=started["run_id"],

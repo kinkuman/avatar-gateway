@@ -14,6 +14,10 @@ import SettingsPanel from './components/SettingsPanel'
 import GazeSpeechMonitor from './components/GazeSpeechMonitor'
 import ToolTimeline from './components/ToolTimeline'
 import VoiceInputControl from './components/VoiceInputControl'
+import VisualInputPanel from './components/VisualInputPanel'
+import ConversationVisualInput from './components/ConversationVisualInput'
+import { useVisualInput } from './hooks/useVisualInput'
+import type { VisualImage } from './hooks/useVisualInput'
 import VrmStage from './components/VrmStage'
 import { advanceActiveRun, clearActiveRun, readActiveRun, saveActiveRun } from './lib/activeRun'
 import { readDisplayMode, saveDisplayMode } from './lib/displayMode'
@@ -805,6 +809,7 @@ export default function App() {
   const backgroundsLoadingRef = useRef(false)
   const uiOverridesRef = useRef(uiOverrides)
   const isBusy = conversationActive
+  const visual = useVisualInput(isBusy || sessionResetting || sessionSwitching)
   conversationActiveRef.current = conversationActive
 
   useEffect(() => {
@@ -1133,6 +1138,7 @@ export default function App() {
   const activateSession = (sessionId: string, formalMessages: Message[]) => {
     clearActiveRun()
     sessionStorage.setItem(HERMES_SESSION_STORAGE_KEY, sessionId)
+    visual.reset()
     setHermesSessionId(sessionId)
     setMessages(formalMessages)
     setGazeTranscript('')
@@ -1176,6 +1182,7 @@ export default function App() {
       // 通知する状態・条件: 表示中の視線の会話を消して、新しいセッションを始めますか？。
       if (!window.confirm(t('app.sessions.confirmNewGazeSession'))) return
       gazeStopRef.current?.()
+      visual.reset()
       setGazeTranscript('')
       setInput('')
       setAvatarState('idle')
@@ -1201,6 +1208,7 @@ export default function App() {
       // 上流の終了を確認してから保存IDと表示を同時に外し、履歴が混ざる状態を作りません。
       sessionStorage.removeItem(HERMES_SESSION_STORAGE_KEY)
       clearActiveRun()
+      visual.reset()
       setHermesSessionId(null)
       setMessages([])
       setGazeTranscript('')
@@ -1691,9 +1699,20 @@ export default function App() {
     rawText: string,
     displayedUserText: string,
     clearComposer: boolean,
+    attachVisual = true,
   ) => {
-    const text = rawText.trim()
-    if (!text || isBusy || activeSessionRef.current) return
+    if (isBusy || sessionResetting || sessionSwitching || activeSessionRef.current
+      || (attachVisual && visual.preparing)) return
+    let image: VisualImage | null = null
+    try {
+      image = attachVisual ? visual.capture() : null
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('visual.invalidImage'))
+      return
+    }
+    const text = rawText.trim() || (image ? t('visual.defaultQuestion') : '')
+    if (!text) return
+    displayedUserText = displayedUserText.trim() || text
 
     conversationActiveRef.current = true
     gazeStopRef.current?.()
@@ -1929,6 +1948,7 @@ export default function App() {
         // 正式履歴はHermes SessionDBからバックエンドが取得するため、今回の入力だけを送ります。
         body: JSON.stringify({
           input: messageToSend,
+          image: image?.dataUrl,
           session_id: hermesSessionId ?? undefined,
           approval_prompt: uiSettings.approval_prompt,
         }),
@@ -1941,6 +1961,7 @@ export default function App() {
           setHermesSessionId(data.session_id)
           sessionStorage.setItem(HERMES_SESSION_STORAGE_KEY, data.session_id)
         } else if (eventName === 'run.started' && typeof data.run_id === 'string') {
+          visual.consume(image)
           session.runId = data.run_id
           displayedRunIdRef.current = data.run_id
           const runSessionId = typeof data.session_id === 'string'
@@ -2075,8 +2096,9 @@ export default function App() {
       event.key !== 'Enter'
       || (!event.ctrlKey && !event.metaKey)
       || event.nativeEvent.isComposing
-      || !input.trim()
+      || (!input.trim() && !visual.file)
       || isBusy
+      || visual.preparing
     ) return
 
     event.preventDefault()
@@ -2086,7 +2108,7 @@ export default function App() {
   /** 接触は会話処理中にキューへ積まず、独立した一回の利用者イベントとして送ります。 */
   const handleVrmTouch = (input: VrmTouchInput) => {
     if (isBusy || activeSessionRef.current) return
-    void startConversation(touchInputText(input), touchDisplayText(input), false)
+    void startConversation(touchInputText(input), touchDisplayText(input), false, false)
   }
 
   /** ギズモで確定した差分を現在モデルだけへ保存し、空なら不要なプロファイルを除きます。 */
@@ -2119,7 +2141,14 @@ export default function App() {
   }
 
   return (
-    <main className={`app-shell ${displayMode === 'conversation' ? 'conversation-mode' : 'standard-mode'}`}>
+    <main className={`app-shell ${displayMode === 'conversation' ? 'conversation-mode' : 'standard-mode'}`}
+      onDragOver={displayMode === 'conversation' ? visual.onDragOver : undefined}
+      onDragEnter={displayMode === 'conversation' ? visual.onDragEnter : undefined}
+      onDragLeave={displayMode === 'conversation' ? visual.onDragLeave : undefined}
+      onDrop={displayMode === 'conversation' ? visual.onDrop : undefined}>
+      {displayMode === 'conversation' && visual.dragging && (
+        <div className="conversation-image-drop" aria-hidden="true">{t('visual.dropHere')}</div>
+      )}
       <section className="avatar-panel">
         <header className="brand">
           <div className="brand-info">
@@ -2400,9 +2429,15 @@ export default function App() {
         )}
         {!sessionHistoryOpen && !agentResourcesOpen && !settingsOpen && (
           <form
-            className={`composer${displayMode === 'conversation' ? ` conversation-composer${conversationTextVisible ? ' text-open' : ''}` : ''}`}
+            className={`composer${visual.dragging ? ' dragging-image' : ''}${visual.file ? ' has-image' : ''}${displayMode === 'conversation' ? ` conversation-composer${conversationTextVisible ? ' text-open' : ''}` : ''}`}
             onSubmit={submit}
+            onDragOver={displayMode === 'standard' ? visual.onDragOver : undefined}
+            onDragEnter={displayMode === 'standard' ? visual.onDragEnter : undefined}
+            onDragLeave={displayMode === 'standard' ? visual.onDragLeave : undefined}
+            onDrop={displayMode === 'standard' ? visual.onDrop : undefined}
           >
+            <VisualInputPanel visual={visual} disabled={isBusy || sessionResetting || sessionSwitching}
+              compact={displayMode === 'conversation'} />
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
@@ -2413,6 +2448,9 @@ export default function App() {
               disabled={isBusy}
             />
             <div className="composer-actions">
+              {displayMode === 'conversation' && (
+                <ConversationVisualInput visual={visual} disabled={isBusy || sessionResetting || sessionSwitching} />
+              )}
               {displayMode === 'conversation' && (
                 <button
                   type="button"
@@ -2443,7 +2481,7 @@ export default function App() {
                   {t('app.composer.interrupt')}</button>
                 </>
               ) : (
-                <button type="submit" className="send-button" disabled={!input.trim()}>
+                <button type="submit" className="send-button" disabled={(!input.trim() && !visual.file) || visual.preparing || sessionResetting || sessionSwitching}>
                   <span>{t('app.composer.send')}</span>
                   <small className="send-shortcut" aria-hidden="true">{t('app.composer.shortcut')}</small>
                 </button>

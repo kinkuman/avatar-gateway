@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .services.input_images import MAX_IMAGE_DATA_URL_LENGTH, validate_input_image
+
 
 def _normalize_approval_prompt(value: str) -> str:
     """改行や余分な空白を除き、承認ウィンドウで読む一文だけを残します。"""
@@ -26,6 +28,13 @@ class HermesConversationRequest(BaseModel):
         pattern=r"^avatar_gateway_[0-9a-f]{32}$",
     )
     approval_prompt: str | None = Field(default=None, max_length=80)
+    image: str | None = Field(default=None, max_length=MAX_IMAGE_DATA_URL_LENGTH)
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value: str | None) -> str | None:
+        """画像は一回分だけ受け取り、Gateway側では永続保存しません。"""
+        return validate_input_image(value) if value is not None else None
 
     @field_validator("input")
     @classmethod

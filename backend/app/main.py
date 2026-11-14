@@ -708,7 +708,10 @@ async def _stream_agent_run(
         session_id = (await client.create_session()).id
 
     yield "session.ready", {"session_id": session_id, "created": created}
-    started = await run_coordinator.start_run(session_id, request.input, instructions)
+    started = await run_coordinator.start_run(
+        session_id, request.input, instructions,
+        **({"image": request.image} if request.image is not None else {}),
+    )
     run_id = str(started["run_id"])
     yield "run.started", {
         "run_id": run_id,
