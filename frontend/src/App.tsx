@@ -6,6 +6,7 @@ import ApprovalPanel from './components/ApprovalPanel'
 import AgentResourcesPanel from './components/AgentResourcesPanel'
 import ModelSelectMenu from './components/ModelSelectMenu'
 import PanelDivider from './components/PanelDivider'
+import SharedVisualOverlay from './components/SharedVisualOverlay'
 import ConversationActivityOverlay from './components/ConversationActivityOverlay'
 import ConversationModeOverlay from './components/ConversationModeOverlay'
 import MarkdownMessage from './components/MarkdownMessage'
@@ -811,6 +812,8 @@ export default function App() {
   const uiOverridesRef = useRef(uiOverrides)
   const isBusy = conversationActive
   const visual = useVisualInput(isBusy || sessionResetting || sessionSwitching)
+  // ボタンとキー操作で共有元の判定を揃え、文字なしでも既定の画像質問を送れるようにします。
+  const hasVisualInput = !!(visual.file || visual.stream)
   conversationActiveRef.current = conversationActive
 
   useEffect(() => {
@@ -2097,7 +2100,7 @@ export default function App() {
       event.key !== 'Enter'
       || (!event.ctrlKey && !event.metaKey)
       || event.nativeEvent.isComposing
-      || (!input.trim() && !visual.file)
+      || (!input.trim() && !hasVisualInput)
       || isBusy
       || visual.preparing
     ) return
@@ -2140,6 +2143,19 @@ export default function App() {
       return resolved
     })
   }
+
+  // 入力処理を共有し、標準画面だけ画像操作と同じ枠へ配置します。
+  const composerTextarea = (
+    <textarea
+      value={input}
+      onChange={(event) => setInput(event.target.value)}
+      onKeyDown={handleComposerKeyDown}
+      aria-keyshortcuts="Control+Enter Meta+Enter"
+      placeholder={t('app.composer.placeholder')}
+      rows={displayMode === 'standard' ? 2 : 3}
+      disabled={isBusy}
+    />
+  )
 
   return (
     <main className={`app-shell ${displayMode === 'conversation' ? 'conversation-mode' : 'standard-mode'}`}
@@ -2279,6 +2295,9 @@ export default function App() {
       </section>
 
       <PanelDivider />
+      {displayMode === 'standard' && (
+        <SharedVisualOverlay visual={visual} disabled={isBusy || sessionResetting || sessionSwitching} />
+      )}
 
       <section className="chat-panel">
         <div className="connection">
@@ -2432,24 +2451,23 @@ export default function App() {
         )}
         {!sessionHistoryOpen && !agentResourcesOpen && !settingsOpen && (
           <form
-            className={`composer${visual.dragging ? ' dragging-image' : ''}${visual.file ? ' has-image' : ''}${displayMode === 'conversation' ? ` conversation-composer${conversationTextVisible ? ' text-open' : ''}` : ''}`}
+            className={`composer${visual.dragging ? ' dragging-image' : ''}${hasVisualInput ? ' has-visual' : ''}${displayMode === 'conversation' ? ` conversation-composer${conversationTextVisible ? ' text-open' : ''}` : ''}`}
             onSubmit={submit}
             onDragOver={displayMode === 'standard' ? visual.onDragOver : undefined}
             onDragEnter={displayMode === 'standard' ? visual.onDragEnter : undefined}
             onDragLeave={displayMode === 'standard' ? visual.onDragLeave : undefined}
             onDrop={displayMode === 'standard' ? visual.onDrop : undefined}
           >
-            <VisualInputPanel visual={visual} disabled={isBusy || sessionResetting || sessionSwitching}
-              compact={displayMode === 'conversation'} />
-            <textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={handleComposerKeyDown}
-              aria-keyshortcuts="Control+Enter Meta+Enter"
-              placeholder={t('app.composer.placeholder')}
-              rows={3}
-              disabled={isBusy}
-            />
+            {displayMode === 'standard' ? (
+              <VisualInputPanel visual={visual} disabled={isBusy || sessionResetting || sessionSwitching}>
+                {composerTextarea}
+              </VisualInputPanel>
+            ) : (
+              <>
+                <VisualInputPanel visual={visual} disabled={isBusy || sessionResetting || sessionSwitching} compact />
+                {composerTextarea}
+              </>
+            )}
             <div className="composer-actions">
               {displayMode === 'conversation' && (
                 <ConversationVisualInput visual={visual} disabled={isBusy || sessionResetting || sessionSwitching} />
@@ -2484,7 +2502,7 @@ export default function App() {
                   {t('app.composer.interrupt')}</button>
                 </>
               ) : (
-                <button type="submit" className="send-button" disabled={(!input.trim() && !visual.file) || visual.preparing || sessionResetting || sessionSwitching}>
+                <button type="submit" className="send-button" disabled={(!input.trim() && !hasVisualInput) || visual.preparing || sessionResetting || sessionSwitching}>
                   <span>{t('app.composer.send')}</span>
                   <small className="send-shortcut" aria-hidden="true">{t('app.composer.shortcut')}</small>
                 </button>

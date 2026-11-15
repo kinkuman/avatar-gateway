@@ -570,6 +570,8 @@
   "gateway.operations.runApproval": "Run承認API",
   "gateway.operations.sessions": "Session一覧API",
   "gateway.operations.runEvents": "RunイベントAPI",
+  "visual.together": "一緒に見ています",
+  "visual.sharedWithAvatar": "アバターと共有中",
   "visual.attach": "画像を添付",
   "visual.share": "画面を共有",
   "visual.stopSharing": "共有を停止",

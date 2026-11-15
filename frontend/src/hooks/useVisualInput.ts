@@ -40,6 +40,7 @@ export function useVisualInput(blocked: boolean) {
   const streamRef = useRef<MediaStream | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const fileRef = useRef<VisualImage | null>(null)
+  const pendingShareRef = useRef<{ stream: MediaStream; video: HTMLVideoElement } | null>(null)
   const sharingVersion = useRef(0)
   const fileVersion = useRef(0)
   const dragDepth = useRef(0)
@@ -47,6 +48,9 @@ export function useVisualInput(blocked: boolean) {
   /** 選択待ちの共有も無効化し、終了済みトラックを次の質問に使わせません。 */
   const stopSharing = useCallback(() => {
     sharingVersion.current += 1
+    pendingShareRef.current?.stream.getTracks().forEach((track) => track.stop())
+    if (pendingShareRef.current) pendingShareRef.current.video.srcObject = null
+    pendingShareRef.current = null
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
@@ -75,6 +79,9 @@ export function useVisualInput(blocked: boolean) {
   useEffect(() => () => {
     sharingVersion.current += 1
     fileVersion.current += 1
+    pendingShareRef.current?.stream.getTracks().forEach((track) => track.stop())
+    if (pendingShareRef.current) pendingShareRef.current.video.srcObject = null
+    pendingShareRef.current = null
     streamRef.current?.getTracks().forEach((track) => track.stop())
     if (videoRef.current) videoRef.current.srcObject = null
     streamRef.current = null
@@ -93,25 +100,40 @@ export function useVisualInput(blocked: boolean) {
     const version = ++sharingVersion.current
     setStarting(true)
     let next: MediaStream | null = null
+    let nextVideo: HTMLVideoElement | null = null
     try {
       next = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
       if (version !== sharingVersion.current) {
         next.getTracks().forEach((track) => track.stop())
         return
       }
-      const video = document.createElement('video')
-      video.muted = true
-      video.playsInline = true
-      video.srcObject = next
-      videoRef.current = video
+      nextVideo = document.createElement('video')
+      nextVideo.muted = true
+      nextVideo.playsInline = true
+      nextVideo.srcObject = next
+      // 準備中の映像も停止対象にし、読込中の切替や画面終了で共有を残しません。
+      pendingShareRef.current = { stream: next, video: nextVideo }
+      // 再生まで成功してから切り替え、許可取消や映像取得の失敗で元の画像を失わないようにします。
+      await nextVideo.play()
+      if (version !== sharingVersion.current) {
+        next.getTracks().forEach((track) => track.stop())
+        nextVideo.srcObject = null
+        return
+      }
+      const track = next.getVideoTracks()[0]
+      if (!track || track.readyState !== 'live') throw new Error(t('visual.shareFailed'))
+      pendingShareRef.current = null
+      videoRef.current = nextVideo
       streamRef.current = next
-      next.getVideoTracks()[0].addEventListener('ended', () => {
+      track.addEventListener('ended', () => {
         if (streamRef.current === next) stopSharing()
       }, { once: true })
+      removeFile()
       setStream(next)
-      await video.play()
     } catch (cause) {
       next?.getTracks().forEach((track) => track.stop())
+      if (nextVideo) nextVideo.srcObject = null
+      if (pendingShareRef.current?.stream === next) pendingShareRef.current = null
       if (version !== sharingVersion.current) return
       stopSharing()
       if (!(cause instanceof DOMException && cause.name === 'NotAllowedError')) {
@@ -126,6 +148,7 @@ export function useVisualInput(blocked: boolean) {
   const selectFiles = async (files: File[]) => {
     if (blocked) return
     setError('')
+    if (files.length === 0) return
     if (files.length !== 1) { setError(t('visual.oneImage')); return }
     const selected = files[0]
     if (!ACCEPTED_TYPES.has(selected.type)) { setError(t('visual.invalidImage')); return }
@@ -138,6 +161,8 @@ export function useVisualInput(blocked: boolean) {
       const dataUrl = encodeImage(bitmap, bitmap.width, bitmap.height, selected.type)
       if (version !== fileVersion.current) return
       const image = { dataUrl, label: selected.name }
+      // 読み込み済みの画像だけを採用し、共有中の画面と同時に有効にしません。
+      stopSharing()
       fileRef.current = image
       setFile(image)
     } catch (cause) {
@@ -151,7 +176,7 @@ export function useVisualInput(blocked: boolean) {
     }
   }
 
-  /** 手動添付を優先し、共有画面は質問の送信時にだけ最新の一枚を取り出します。 */
+  /** 有効な共有元から一枚だけ取り出し、画面共有は質問時の最新映像を使います。 */
   const capture = (): VisualImage | null => {
     if (fileRef.current) return fileRef.current
     const shared = streamRef.current

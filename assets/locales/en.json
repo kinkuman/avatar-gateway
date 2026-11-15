@@ -570,6 +570,8 @@
   "gateway.operations.runApproval": "Run approval API",
   "gateway.operations.sessions": "session list API",
   "gateway.operations.runEvents": "Run events API",
+  "visual.together": "Looking together",
+  "visual.sharedWithAvatar": "Sharing with the avatar",
   "visual.attach": "Attach image",
   "visual.share": "Share screen",
   "visual.stopSharing": "Stop sharing",

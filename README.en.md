@@ -623,6 +623,8 @@ Start the backend after the download finishes. The model goes to the default loc
 
 ![Screen sharing and image attachment controls](docs/images/attach_and_share.png)
 
+In Standard view, the image attachment and screen sharing buttons sit at the bottom left inside the message input frame. In the side-by-side layout, the shared image or screen appears in a closely fitted, rounded frame across the avatar/chat divider. Use the control below **Looking together** to remove the image or stop sharing. The frame follows the divider when you resize the panels and shows the whole image without cropping its corners. While sharing, both your messages and Hermes replies use the space to the right of the preview and its controls. Hermes stays left-aligned and your messages stay right-aligned within that space. The conversation returns to its normal layout when sharing ends. The stacked mobile layout keeps the preview inside the input frame, and Conversation view keeps its existing preview controls.
+
 Select the paperclip icon to attach an image, or the monitor-and-arrow icon to share a screen. Hover over an icon to see its action name. The screen sharing icon turns green while sharing. In Conversation view, select the active sharing icon to open the preview and **Stop sharing** control. You can also drop an image directly onto Conversation view. A small thumbnail appears only while an attachment is waiting to be sent.
 
 Ask the avatar about a screen or image using the usual message box or microphone. `The model connected through Hermes must support image input.`
@@ -631,7 +633,7 @@ Ask the avatar about a screen or image using the usual message box or microphone
 
 1. Select the monitor-and-arrow icon (**Share screen**) in the conversation composer.
 2. In the browser picker, choose a screen, window, or tab. Available options depend on the browser and OS.
-3. Check the preview, then send a question or speak into the microphone. Each question includes one image of the screen at the time you send it.
+3. Check the preview, then send a question or speak into the microphone. Each question includes one image of the screen at the time you send it. You can also select **Send** with an empty message; this adds “Please tell me about this image.” Both image attachments and shared screens can be sent from the text field with `Ctrl+Enter` (`⌘+Enter` on macOS). In Conversation view, the Send button is shown while sharing even when text input is closed.
 
 ![Shared screen preview](docs/images/display_share_preview.png)
 
@@ -645,7 +647,7 @@ For Chromium-based browsers, screen sharing uses [the same HTTP exception as mic
 
 1. Drop one PNG, JPEG, or WebP still image onto the message composer, or select **Attach image**.
 2. Check the preview, add a question, and send. Sending an image without text asks “Please tell me about this image.”
-3. Select **Remove image** to cancel the attachment. If screen sharing is active, the attached image takes priority for that question. Subsequent questions use the shared screen again.
+3. Select **Remove image** to cancel the attachment. Only one source is active at a time: successfully loading an image stops screen sharing, and successfully starting screen sharing clears the attached image. Canceling or failing to select a new source keeps the previous source. An image preview closes after a successful send; screen sharing continues until stopped. Stopped screen sharing does not resume automatically.
 
 Files may be up to 10MB. Images are resized to a maximum long edge of 2048px. If the result still exceeds 4MB, choose a smaller image. To ask about small text, enlarge it in the source application before sending.
 

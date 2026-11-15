@@ -99,7 +99,7 @@ export default function ConversationVisualInput({ visual, disabled }: Conversati
       {open && sharing && (
         <div ref={panelRef} id={panelId} className="conversation-visual-popover" style={panelPosition}
           role="dialog" aria-label={t('visual.sharingDetails')}>
-          {visual.stream ? <SharedScreenPreview stream={visual.stream} fileAttached={!!visual.file} />
+          {visual.stream ? <SharedScreenPreview stream={visual.stream} />
             : <p role="status">{t('visual.selecting')}</p>}
           <button type="button" className="visual-button stop-sharing" title={t('visual.stopSharing')}
             onClick={() => {

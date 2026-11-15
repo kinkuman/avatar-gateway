@@ -1,5 +1,6 @@
-// 標準画面の画像操作と、会話画面で必要な一時プレビューを提供します。
+// 標準画面の入力欄・画像操作を一つの枠にまとめ、会話画面には一時プレビューを提供します。
 import { useEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { t, translateMessage } from '../i18n'
 import type { useVisualInput } from '../hooks/useVisualInput'
 import SessionActionIcon from './SessionActionIcon'
@@ -8,10 +9,11 @@ interface VisualInputPanelProps {
   visual: ReturnType<typeof useVisualInput>
   disabled: boolean
   compact?: boolean
+  children?: ReactNode
 }
 
 /** 表示を閉じても共有自体は続けられるよう、プレビューの再生だけを管理します。 */
-export function SharedScreenPreview({ stream, fileAttached }: { stream: MediaStream; fileAttached: boolean }) {
+export function SharedScreenPreview({ stream }: { stream: MediaStream }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const video = videoRef.current
@@ -24,18 +26,34 @@ export function SharedScreenPreview({ stream, fileAttached }: { stream: MediaStr
   return (
     <div className="visual-preview shared-screen-preview">
       <video ref={videoRef} autoPlay muted playsInline aria-label={t('visual.screenPreview')} />
-      <span>{t(fileAttached ? 'visual.screenPausedForFile' : 'visual.screenOnQuestion')}</span>
+      <span>{t('visual.screenOnQuestion')}</span>
     </div>
   )
 }
 
-/** 会話画面では送信前の画像と通知だけを出し、標準画面では従来の操作をまとめます。 */
-export default function VisualInputPanel({ visual, disabled, compact = false }: VisualInputPanelProps) {
+/** 入力と操作の位置を保ち、プレビューは画面幅に応じて共有枠と入力欄内へ出し分けます。 */
+export default function VisualInputPanel({ visual, disabled, compact = false, children }: VisualInputPanelProps) {
   const pickerRef = useRef<HTMLInputElement>(null)
   if (compact && !visual.file && !visual.preparing && !visual.error) return null
 
   return (
     <div className={`visual-input${compact ? ' visual-input-compact' : ''}`}>
+      <div className="visual-previews">
+        {!compact && visual.stream && <SharedScreenPreview stream={visual.stream} />}
+        {visual.file && (
+          <div className="visual-preview attached-image">
+            <img src={visual.file.dataUrl} alt={t('visual.imagePreview')} />
+            <div><span title={visual.file.label}>{visual.file.label}</span>
+              <button type="button" className="visual-button" disabled={disabled}
+                aria-label={t('visual.remove')} onClick={visual.removeFile}>
+                {compact ? '×' : t('visual.remove')}
+              </button></div>
+          </div>
+        )}
+      </div>
+      {visual.preparing && <p role="status">{t('visual.preparing')}</p>}
+      {visual.error && <p className="visual-error" role="alert">{translateMessage(visual.error)}</p>}
+      {!compact && children}
       {!compact && (
         <div className="visual-input-actions">
           <button type="button" className="visual-button visual-icon-button" disabled={disabled || visual.preparing}
@@ -57,24 +75,8 @@ export default function VisualInputPanel({ visual, disabled, compact = false }: 
               aria-label={t('visual.share')} title={t('visual.share')} aria-pressed={false}
               onClick={() => void visual.startSharing()}><SessionActionIcon name="share-screen" /></button>
           )}
-          <span className="visual-input-hint">{t(visual.dragging ? 'visual.dropHere' : 'visual.dropHint')}</span>
         </div>
       )}
-      <div className="visual-previews">
-        {!compact && visual.stream && <SharedScreenPreview stream={visual.stream} fileAttached={!!visual.file} />}
-        {visual.file && (
-          <div className="visual-preview attached-image">
-            <img src={visual.file.dataUrl} alt={t('visual.imagePreview')} />
-            <div><span title={visual.file.label}>{visual.file.label}</span>
-              <button type="button" className="visual-button" disabled={disabled}
-                aria-label={t('visual.remove')} onClick={visual.removeFile}>
-                {compact ? '×' : t('visual.remove')}
-              </button></div>
-          </div>
-        )}
-      </div>
-      {visual.preparing && <p role="status">{t('visual.preparing')}</p>}
-      {visual.error && <p className="visual-error" role="alert">{translateMessage(visual.error)}</p>}
     </div>
   )
 }

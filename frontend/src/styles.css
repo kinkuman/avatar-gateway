@@ -3,7 +3,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; height: 100dvh; overflow: hidden; }
 button, textarea { font: inherit; }
-.app-shell { display: grid; grid-template-columns: clamp(360px, calc((100% - 4px) * var(--avatar-ratio, .55)), calc(100% - 344px)) 4px minmax(340px, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
+.app-shell { position: relative; display: grid; grid-template-columns: clamp(360px, calc((100% - 4px) * var(--avatar-ratio, .55)), calc(100% - 344px)) 4px minmax(340px, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
 /* 境界を掴める幅を確保し、操作中の文字選択やアバター操作への流出を防ぎます。 */
 /* ホバーとドラッグで段階的に濃くし、離したらカーソル位置に応じた表示へ戻します。 */
 .panel-divider { position: relative; z-index: 9; cursor: col-resize; touch-action: none; background: #f8fafc; outline: none; }
@@ -13,6 +13,22 @@ button, textarea { font: inherit; }
 .panel-divider:focus-visible { outline: 2px solid #4b5563; outline-offset: -2px; }
 .app-shell:has(.panel-divider.resizing), .app-shell:has(.panel-divider.resizing) * { cursor: col-resize !important; user-select: none !important; }
 .conversation-mode .panel-divider { display: none; }
+
+/* 境界幅の計算を共有し、リサイズ中も左右の中央にある共有枠を追従させます。 */
+.shared-visual-overlay { position: absolute; z-index: 10; left: calc(clamp(360px, calc((100% - 4px) * var(--avatar-ratio, .55)), calc(100% - 344px)) + 2px); top: 50%; transform: translate(-50%, -50%); width: clamp(240px, 26vw, 360px); pointer-events: none; }
+/* プレビューの実寸に沿う枠にし、全体表示のための余白を最小限にします。 */
+.shared-visual-orbit { width: fit-content; max-width: 100%; margin: 0 auto; padding: 4px; border: 2px solid #cbd5e199; border-radius: 12px; background: #111827ef; box-shadow: 0 12px 40px #0f172a40; }
+.shared-visual-orbit > img, .shared-visual-orbit .visual-preview video { display: block; width: auto; height: auto; max-width: calc(clamp(240px, 26vw, 360px) - 12px); max-height: min(40dvh, 360px); object-fit: contain; border-radius: 4px; }
+.shared-visual-orbit .visual-preview { display: block; width: fit-content; max-width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.shared-visual-orbit .visual-preview video { background: transparent; }
+.shared-visual-orbit .visual-preview span { display: none; }
+.shared-visual-caption { display: flex; width: max-content; max-width: 100%; margin: 10px auto 0; padding: 8px 12px; flex-direction: column; align-items: center; gap: 5px; border: 1px solid #cbd5e180; border-radius: 12px; color: #e2e8f0; background: #111827ef; font-size: 12px; }
+.shared-visual-caption small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shared-visual-caption button { min-height: 32px; padding: 4px 10px; border: 1px solid #94a3b880; border-radius: 7px; color: #e2e8f0; background: #334155; cursor: pointer; pointer-events: auto; }
+.shared-visual-caption button:hover { background: #475569; }
+.shared-visual-caption button:focus-visible { outline: 2px solid #94a3b8; outline-offset: 2px; }
+.shared-visual-caption button:disabled { opacity: .55; cursor: not-allowed; }
+
 .avatar-panel { position: relative; height: 100dvh; min-height: 0; background: radial-gradient(circle at 50% 30%, #28364d, #111827 60%, #090e18); overflow: hidden; }
 .brand { position: absolute; z-index: 2; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 28px; pointer-events: none; }
 .brand-info { display: flex; flex-direction: column; gap: 5px; padding: 10px 13px; border: 1px solid #ffffff26; border-radius: 11px; color: #e2e8f0; background: #0f172acc; box-shadow: 0 8px 24px #0002; backdrop-filter: blur(9px); }
@@ -458,6 +474,18 @@ button, textarea { font: inherit; }
 /* 共有元と手動添付を入力欄にまとめ、送信対象をアバター表示と独立して確認できます。 */
 .visual-input { grid-column: 1 / -1; min-width: 0; }
 .visual-input-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* 入力と操作を一つの枠に収め、添付や共有で増える高さをプレビュー分だけにします。 */
+.standard-mode .composer > .visual-input { grid-column: 1; display: flex; flex-direction: column; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; overflow: hidden; }
+.standard-mode .composer > .visual-input:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px #3b82f626; }
+.standard-mode .visual-input textarea { display: block; min-width: 0; border: 0; border-radius: 0; box-shadow: none; }
+.standard-mode .visual-input-actions { flex-wrap: nowrap; margin-top: auto; padding: 0 8px 8px; }
+/* 共有と画像添付が重なっても操作列を押し出さないよう、プレビュー内でスクロールします。 */
+.standard-mode .visual-input .visual-previews { display: none; max-height: min(200px, 24dvh); overflow-y: auto; }
+.standard-mode .visual-input .visual-previews:not(:empty) { padding: 8px 8px 0; }
+.standard-mode .visual-input .visual-preview { flex-wrap: wrap; margin-top: 0; }
+.standard-mode .visual-input .visual-preview video, .standard-mode .visual-input .visual-preview img { max-width: 100%; }
+.standard-mode .visual-input > p { margin: 8px 10px; }
+
 .composer button.visual-button { align-self: center; min-width: 0; padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: #f8fafc; font-size: 12px; }
 .composer button.visual-button:hover { background: #e2e8f0; }
 /* 共有状態は色と押下状態で伝え、文字がなくてもタッチしやすい大きさを保ちます。 */
@@ -487,8 +515,8 @@ button, textarea { font: inherit; }
   .visual-input-hint { width: 100%; }
 }
 
-/* 文字入力を閉じている会話モードでも、画像だけの質問を送れるようにします。 */
-.conversation-composer.has-image button.send-button { display: flex; }
+/* 文字入力を閉じている会話モードでも、添付画像・共有画面だけで送信できます。 */
+.conversation-composer.has-visual button.send-button { display: flex; }
 
 /* 会話中は既存の操作列へ入口だけを置き、未使用の画像パネルで画面を覆いません。 */
 .conversation-composer .composer-actions { flex-wrap: wrap; }
@@ -512,3 +540,15 @@ button, textarea { font: inherit; }
 .conversation-composer .visual-input-compact button.visual-button { min-width: 32px; min-height: 32px; padding: 0; color: #e2e8f0; border-color: #ffffff38; background: transparent; font-size: 20px; }
 .conversation-composer.dragging-image { outline: 0; background: transparent; }
 .conversation-image-drop { position: absolute; z-index: 60; inset: 12px; display: grid; place-items: center; border: 2px dashed #93c5fd; border-radius: 18px; color: #fff; background: #1e3a5fbb; pointer-events: none; font-size: 20px; font-weight: 700; }
+
+/* 上下表示では境界の丸枠を出さず、既存の入力枠内プレビューを使います。 */
+@media (max-width: 760px) {
+  .shared-visual-overlay { display: none; }
+  .standard-mode .visual-input .visual-previews { display: flex; }
+}
+
+/* 会話全体で共有枠を避け、残った幅の中でHermesは左・ユーザーは右に揃えます。 */
+@media (min-width: 761px) {
+  .standard-mode .messages { width: var(--shared-chat-width, auto); padding-left: max(28px, var(--shared-chat-inset, 0px)); }
+  .standard-mode:has(.shared-visual-overlay) .messages > .message.user p { max-width: 100%; overflow-wrap: anywhere; }
+}
