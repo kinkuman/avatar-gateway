@@ -31,6 +31,8 @@
   "app.avatar.idle": "待機中",
   "app.avatar.speaking": "発話中",
   "app.avatar.synthesizing": "音声を準備中",
+  "app.layout.resize": "アバターとチャットの幅を調整",
+  "app.layout.resizeHint": "左右にドラッグして幅を調整。ダブルクリックで初期幅に戻します。矢印キーで調整、Homeキーで復元できます。",
   "app.brand": "AVATAR GATEWAY",
   "app.composer.closeText": "文字入力を閉じる",
   "app.composer.interrupt": "作業を中断",

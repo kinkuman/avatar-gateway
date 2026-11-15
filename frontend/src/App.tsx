@@ -5,6 +5,7 @@ import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState 
 import ApprovalPanel from './components/ApprovalPanel'
 import AgentResourcesPanel from './components/AgentResourcesPanel'
 import ModelSelectMenu from './components/ModelSelectMenu'
+import PanelDivider from './components/PanelDivider'
 import ConversationActivityOverlay from './components/ConversationActivityOverlay'
 import ConversationModeOverlay from './components/ConversationModeOverlay'
 import MarkdownMessage from './components/MarkdownMessage'
@@ -2276,6 +2277,8 @@ export default function App() {
         {missingMotions.length > 0 && <p className="notice">{t('app.motion.filesMissing', { files: missingMotions.map((motion) => motion.file).join(', ') })}</p>}
         {gazeSettings.enabled && <p className="gaze-live-status" role="status">{translateMessage(gazeStatus)}</p>}
       </section>
+
+      <PanelDivider />
 
       <section className="chat-panel">
         <div className="connection">

@@ -187,6 +187,8 @@ Select the person-in-a-frame icon labeled `Switch to conversation view` to enter
 
 Select the split-screen icon labeled `Switch to standard view` to return to Standard view for full history, sessions, Hermes resources, and settings. Changing views keeps the current session, active conversation, and microphone state.
 
+When Standard view shows the avatar and chat side by side, drag the thin divider left or right to adjust their widths. The ratio is saved in this browser. Double-click the divider to restore the default ratio. With a keyboard, press Tab to focus the divider, use the left and right arrow keys to resize (hold Shift for larger steps), or press Home to reset. The divider is hidden in the stacked mobile layout and in Conversation view.
+
 The Standard view actions are, from left to right: change view, session history, Hermes features, model selection, settings, and new session. Hover over an icon to see its label in the selected display language; assistive technology receives the same label.
 
 ![Standard view icons](docs/images/icons.png)

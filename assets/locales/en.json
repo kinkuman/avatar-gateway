@@ -31,6 +31,8 @@
   "app.avatar.idle": "Idle",
   "app.avatar.speaking": "Speaking",
   "app.avatar.synthesizing": "Preparing audio",
+  "app.layout.resize": "Resize avatar and chat panels",
+  "app.layout.resizeHint": "Drag left or right to resize. Double-click to reset. Use arrow keys to adjust or Home to reset.",
   "app.brand": "AVATAR GATEWAY",
   "app.composer.closeText": "Close text input",
   "app.composer.interrupt": "Stop task",

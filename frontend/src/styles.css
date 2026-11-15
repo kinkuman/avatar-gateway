@@ -3,7 +3,16 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; height: 100dvh; overflow: hidden; }
 button, textarea { font: inherit; }
-.app-shell { display: grid; grid-template-columns: minmax(360px, 1.1fr) minmax(340px, .9fr); height: 100dvh; min-height: 0; overflow: hidden; }
+.app-shell { display: grid; grid-template-columns: clamp(360px, calc((100% - 4px) * var(--avatar-ratio, .55)), calc(100% - 344px)) 4px minmax(340px, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
+/* 境界を掴める幅を確保し、操作中の文字選択やアバター操作への流出を防ぎます。 */
+/* ホバーとドラッグで段階的に濃くし、離したらカーソル位置に応じた表示へ戻します。 */
+.panel-divider { position: relative; z-index: 9; cursor: col-resize; touch-action: none; background: #f8fafc; outline: none; }
+/* 表示と操作を同じ4pxの領域に揃え、アバター側へ余白を残しません。 */
+.panel-divider:hover { background: #e2e8f0; }
+.panel-divider.resizing { background: #cbd5e1; }
+.panel-divider:focus-visible { outline: 2px solid #4b5563; outline-offset: -2px; }
+.app-shell:has(.panel-divider.resizing), .app-shell:has(.panel-divider.resizing) * { cursor: col-resize !important; user-select: none !important; }
+.conversation-mode .panel-divider { display: none; }
 .avatar-panel { position: relative; height: 100dvh; min-height: 0; background: radial-gradient(circle at 50% 30%, #28364d, #111827 60%, #090e18); overflow: hidden; }
 .brand { position: absolute; z-index: 2; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 28px; pointer-events: none; }
 .brand-info { display: flex; flex-direction: column; gap: 5px; padding: 10px 13px; border: 1px solid #ffffff26; border-radius: 11px; color: #e2e8f0; background: #0f172acc; box-shadow: 0 8px 24px #0002; backdrop-filter: blur(9px); }
@@ -413,6 +422,7 @@ button, textarea { font: inherit; }
 .conversation-composer.text-open button.send-button { min-width: 72px; }
 
 @media (max-width: 760px) {
+  .panel-divider { display: none; }
   .app-shell { grid-template-columns: 1fr; grid-template-rows: 45dvh 55dvh; }
   .avatar-panel { height: 45dvh; min-height: 0; }
   .chat-panel { height: 55dvh; min-height: 0; }
