@@ -552,3 +552,12 @@ button, textarea { font: inherit; }
   .standard-mode .messages { width: var(--shared-chat-width, auto); padding-left: max(28px, var(--shared-chat-inset, 0px)); }
   .standard-mode:has(.shared-visual-overlay) .messages > .message.user p { max-width: 100%; overflow-wrap: anywhere; }
 }
+
+/* 作業状況と承認も会話と同じ共有余白を使い、狭い幅では操作を折り返します。 */
+@media (min-width: 761px) {
+  .standard-mode:has(.shared-visual-overlay) .conversation-scroll > :is(.work-panel, .approval-panel) { margin-left: max(28px, var(--shared-chat-inset, 0px)); width: max(0px, calc(var(--shared-chat-width, 100%) - max(28px, var(--shared-chat-inset, 0px)) - 28px)); min-width: 0; overflow-wrap: anywhere; }
+  .standard-mode:has(.shared-visual-overlay) :is(.work-panel-header, .work-panel-actions, .approval-header, .tool-entry-title) { flex-wrap: wrap; gap: 8px; min-width: 0; }
+  .standard-mode:has(.shared-visual-overlay) :is(.work-panel-header, .approval-header) > div { min-width: 0; }
+  .standard-mode:has(.shared-visual-overlay) .approval-panel button { max-width: 100%; overflow-wrap: anywhere; }
+  .standard-mode:has(.shared-visual-overlay) .approval-expanded-actions summary { width: auto; }
+}
