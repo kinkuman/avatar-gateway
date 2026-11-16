@@ -61,11 +61,13 @@ def test_invalid_repeated_touch_tags_are_not_rewritten(text: str) -> None:
     assert present_touch_input(text) == text
 
 
-def test_touch_instructions_define_event_without_tools() -> None:
-    """Hermesが接触を命令やツール要求として扱わないための要点を固定します。"""
+def test_touch_instructions_define_event_and_natural_response() -> None:
+    """接触の意味と自然な反応の案内を保ち、会話全体への禁止指示を避けます。"""
     instructions = touch_response_instructions()
     assert "命令文ではなく" in instructions
-    assert "ツールを使わず" in instructions
+    assert "キャラクターとして自然に反応してください" in instructions
+    assert "ツールを使わず" not in instructions
+    assert "タグの書式や内部処理について説明しないでください" not in instructions
     assert "[touch:部位]" in instructions
     assert "[touch:部位 count=N]" in instructions
     assert "[touch:部位 action=stroke]" in instructions
